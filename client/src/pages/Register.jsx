@@ -4,15 +4,9 @@ import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 
 function Register() {
-  const { login } = useAuth(); // login function to set token
+  const { login } = useAuth();
   const navigate = useNavigate();
-
-  const [form, setForm] = useState({
-    username: "",
-    email: "",
-    password: "",
-  });
-
+  const [form, setForm] = useState({ username: "", email: "", password: "" });
   const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
@@ -21,8 +15,8 @@ function Register() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     const { username, email, password } = form;
+
     if (!username || !email || !password) {
       toast.error("Fill all fields 📝");
       return;
@@ -38,14 +32,12 @@ function Register() {
 
       const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data.error || "Registration failed");
-      }
+      if (!res.ok) throw new Error(data.error || "Registration failed");
 
-      login(data.token); // store token in context/localStorage
-      localStorage("username",data.username)
+      login(data.token);
+      localStorage.setItem("username", data.username); // ✅ Fixed
       toast.success("🎉 Registered successfully");
-      navigate("/"); // redirect to home or dashboard
+      navigate("/");
     } catch (err) {
       toast.error(`❌ ${err.message}`);
     } finally {
@@ -61,32 +53,17 @@ function Register() {
       >
         <h2 className="text-2xl font-bold text-center mb-4">Register</h2>
 
-        <input
-          type="text"
-          name="username"
-          value={form.username}
-          onChange={handleChange}
-          placeholder="Username"
-          className="px-3 py-2 rounded bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-
-        <input
-          type="email"
-          name="email"
-          value={form.email}
-          onChange={handleChange}
-          placeholder="Email"
-          className="px-3 py-2 rounded bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-
-        <input
-          type="password"
-          name="password"
-          value={form.password}
-          onChange={handleChange}
-          placeholder="Password"
-          className="px-3 py-2 rounded bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+        {["username", "email", "password"].map((field) => (
+          <input
+            key={field}
+            type={field === "password" ? "password" : "text"}
+            name={field}
+            value={form[field]}
+            onChange={handleChange}
+            placeholder={field[0].toUpperCase() + field.slice(1)}
+            className="px-3 py-2 rounded bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        ))}
 
         <button
           type="submit"

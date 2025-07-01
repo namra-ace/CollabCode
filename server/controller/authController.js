@@ -5,14 +5,27 @@ const User = require("../models/User");
 exports.registerUser = async (req, res) => {
   const { username, email, password } = req.body;
   try {
-    const existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ error: "User already exists" });
+    const existingUser = await User.findOne({
+      $or: [{ email }, { username }],
+    });
+
+    if (existingUser) {
+      const isEmail = existingUser.email === email;
+      const isUsername = existingUser.username === username;
+
+      const msg = isEmail && isUsername
+        ? "Username and email already taken"
+        : isEmail
+        ? "Email already registered"
+        : "Username already taken";
+
+      return res.status(400).json({ error: msg });
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = new User({ username, email, password: hashedPassword });
     await user.save();
 
-    // ✅ Include username and email in token
     const token = jwt.sign(
       { id: user._id, email: user.email, username: user.username },
       process.env.JWT_SECRET,
