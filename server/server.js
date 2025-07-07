@@ -15,30 +15,51 @@ const User = require("./models/User");
 
 const app = express();
 const server = http.createServer(app);
-const authenticateJWT = require('./middleware/authenticateJWT')
+const authenticateJWT = require('./middleware/authenticateJWT');
 
+// ✅ Allowed origins (dev + prod)
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  "http://localhost:5173"
+];
+
+// ✅ Setup CORS middleware
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE"],
+}));
+
+// ✅ Setup Socket.IO with dynamic CORS
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST"],
+    origin: allowedOrigins,
+    methods: ["GET", "POST"]
   },
 });
 
-// Connect to MongoDB
+// ✅ MongoDB Connection
 mongoose
-  .connect(process.env.MONGO_URL)
+  .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ Database connected"))
   .catch((err) => console.error("❌ Database connection error:", err));
 
 // Middleware
-app.use(cors());
 app.use(express.json());
 app.use("/api/auth", authRoutes);
+
+// ✂️ ... all your existing routes remain untouched ...
+// (create-room, save, load, download, my-rooms, me)
 
 app.post("/api/create-room", async (req, res) => {
   try {
     const { roomId, title } = req.body;
-
     if (!roomId) return res.status(400).json({ error: "Missing roomId" });
 
     const exists = await Project.findOne({ roomId });
@@ -60,8 +81,6 @@ app.post("/api/create-room", async (req, res) => {
   }
 });
 
-
-// Save project
 app.post("/api/save", optionallyVerifyToken, async (req, res) => {
   const { roomId, files, structure, title } = req.body;
   if (!roomId || !files || !structure) {
@@ -93,7 +112,6 @@ app.post("/api/save", optionallyVerifyToken, async (req, res) => {
   }
 });
 
-// Load project
 app.get("/api/room/:roomId", optionallyVerifyToken, async (req, res) => {
   try {
     const project = await Project.findOne({ roomId: req.params.roomId });
@@ -112,7 +130,6 @@ app.get("/api/room/:roomId", optionallyVerifyToken, async (req, res) => {
   }
 });
 
-// Download project as ZIP
 app.get("/api/download/:roomId", async (req, res) => {
   try {
     const project = await Project.findOne({ roomId: req.params.roomId });
@@ -146,7 +163,6 @@ app.get("/api/download/:roomId", async (req, res) => {
   }
 });
 
-// Get rooms created/visited by authenticated user
 app.get("/api/my-rooms", optionallyVerifyToken, async (req, res) => {
   if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 
@@ -167,18 +183,16 @@ app.get("/api/my-rooms", optionallyVerifyToken, async (req, res) => {
 });
 
 app.get("/api/me", authenticateJWT, (req, res) => {
-
   res.json({ username: req.user.username, email: req.user.email });
 });
 
-
-// Socket.io handling
+// ✅ Socket.io setup
 io.on("connection", (socket) => {
   console.log("⚡ User connected:", socket.id);
   codeSocket(socket, io);
 });
 
-// Default health check
+// ✅ Health check
 app.get("/", (req, res) => res.send("🚀 Server running"));
 
 const PORT = process.env.PORT || 5000;

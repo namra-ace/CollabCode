@@ -269,7 +269,7 @@ function EditorPage() {
                       [activeFile]: newCode,
                     }))
                   }
-                  language={fileLanguage[activeFile] || "plaintext"}
+                  language={getLanguageFromExtension(activeFile) || "plaintext"}
                 />
               </motion.div>
             ) : (
