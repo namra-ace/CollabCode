@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 
+const API_BASE = import.meta.env.VITE_API_URL;
+
 function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -29,7 +31,7 @@ function Login() {
 
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:5000/api/auth/login", {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -40,7 +42,7 @@ function Login() {
       if (!res.ok) throw new Error(data.error || "Login failed");
 
       login(data.token); // store token in context/localStorage
-      localStorage.setItem("username",data.username)
+      localStorage.setItem("username", data.username);
       toast.success("✅ Logged in");
       navigate("/");
     } catch (err) {

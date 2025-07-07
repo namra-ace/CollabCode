@@ -17,6 +17,8 @@ function Home() {
   const [visitedRooms, setVisitedRooms] = useState([]);
   const [loadingRooms, setLoadingRooms] = useState(true);
 
+  const API_BASE = import.meta.env.VITE_API_URL;
+
   useEffect(() => {
     const fetchVisitedRooms = async () => {
       if (!isAuthenticated) {
@@ -25,7 +27,7 @@ function Home() {
         return;
       }
       try {
-        const res = await fetch("http://localhost:5000/api/my-rooms", {
+        const res = await fetch(`${API_BASE}/api/my-rooms`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
@@ -38,7 +40,7 @@ function Home() {
       }
     };
     fetchVisitedRooms();
-  }, [isAuthenticated, token]);
+  }, [isAuthenticated, token, API_BASE]);
 
   const handleCreateRoom = async () => {
     const newRoomId = uniqueNamesGenerator({
@@ -47,7 +49,7 @@ function Home() {
       length: 3,
     });
     try {
-      const res = await fetch("http://localhost:5000/api/create-room", {
+      const res = await fetch(`${API_BASE}/api/create-room`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ roomId: newRoomId }),
