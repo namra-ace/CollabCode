@@ -23,6 +23,9 @@ const allowedOrigins = [
   "http://localhost:5173"
 ];
 
+console.log("✅ FRONTEND_URL:", process.env.FRONTEND_URL);
+console.log("✅ allowedOrigins:", allowedOrigins);
+
 // ✅ Setup CORS middleware
 app.use(cors({
   origin: function (origin, callback) {
