@@ -9,43 +9,43 @@ const mongoose = require("mongoose");
 const codeSocket = require("./sockets/codeSocket");
 const authRoutes = require("./routes/authRoutes");
 const optionallyVerifyToken = require("./middleware/optionallyVerifyToken");
+const authenticateJWT = require("./middleware/authenticateJWT");
 
 const Project = require("./models/Project");
 const User = require("./models/User");
 
 const app = express();
 const server = http.createServer(app);
-const authenticateJWT = require('./middleware/authenticateJWT');
 
-// ✅ Allowed origins (dev + prod)
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  "http://localhost:5173"
-];
+// ✅ Setup Allowed Origins
+const LOCAL_ORIGIN = "http://localhost:5173";
+const DEPLOYED_ORIGIN = process.env.FRONTEND_URL;
 
-console.log("✅ FRONTEND_URL:", process.env.FRONTEND_URL);
-console.log("✅ allowedOrigins:", allowedOrigins);
+if (!DEPLOYED_ORIGIN) {
+  console.warn("⚠️ FRONTEND_URL is not defined in .env");
+}
 
-// ✅ Setup CORS middleware
+const allowedOrigins = [LOCAL_ORIGIN];
+if (DEPLOYED_ORIGIN) allowedOrigins.push(DEPLOYED_ORIGIN);
+
+console.log("✅ Allowed Origins:", allowedOrigins);
+
+// ✅ CORS Middleware
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
+      return callback(null, true);
     }
+    console.error("❌ CORS blocked origin:", origin);
+    return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 }));
 
-// ✅ Setup Socket.IO with dynamic CORS
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ["GET", "POST"]
-  },
-});
+// ✅ Express Setup
+app.use(express.json());
+app.use("/api/auth", authRoutes);
 
 // ✅ MongoDB Connection
 mongoose
@@ -53,12 +53,22 @@ mongoose
   .then(() => console.log("✅ Database connected"))
   .catch((err) => console.error("❌ Database connection error:", err));
 
-// Middleware
-app.use(express.json());
-app.use("/api/auth", authRoutes);
+// ✅ Socket.IO Setup
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+});
 
-// ✂️ ... all your existing routes remain untouched ...
-// (create-room, save, load, download, my-rooms, me)
+io.on("connection", (socket) => {
+  console.log("⚡ User connected:", socket.id);
+  codeSocket(socket, io);
+});
+
+// ✅ Routes
+app.get("/", (req, res) => res.send("🚀 Server running"));
 
 app.post("/api/create-room", async (req, res) => {
   try {
@@ -189,14 +199,6 @@ app.get("/api/me", authenticateJWT, (req, res) => {
   res.json({ username: req.user.username, email: req.user.email });
 });
 
-// ✅ Socket.io setup
-io.on("connection", (socket) => {
-  console.log("⚡ User connected:", socket.id);
-  codeSocket(socket, io);
-});
-
-// ✅ Health check
-app.get("/", (req, res) => res.send("🚀 Server running"));
-
+// ✅ Start Server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`🚀 Server listening on port ${PORT}`));
