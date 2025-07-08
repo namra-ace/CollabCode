@@ -22,7 +22,7 @@ export default function useEditorSync({
   const preventEmitRef = useRef(false);
   const API_BASE = import.meta.env.VITE_API_URL;
 
-  // Load from socket or DB
+  // Load from socket or fallback DB
   useEffect(() => {
     const socket = socketRef?.current;
     if (!socket || !roomId) return;
@@ -64,12 +64,17 @@ export default function useEditorSync({
     };
   }, [roomId, hasLoadedFiles]);
 
-  // Handle incoming structure update
+  // Handle incoming structure updates
   useEffect(() => {
     const socket = socketRef?.current;
     if (!socket) return;
 
     const handleStructureUpdate = ({ structure, files }) => {
+      if (isEqual(structure, projectstructure) && isEqual(files, fileContent)) {
+        console.log("📥 Skipped identical incoming structure update");
+        return;
+      }
+
       preventEmitRef.current = true;
       setFileContent(files || {});
       setProjectStructure(structure || { type: "folder", name: "root", children: [] });
@@ -80,7 +85,7 @@ export default function useEditorSync({
 
     socket.on("structure-update", handleStructureUpdate);
     return () => socket.off("structure-update", handleStructureUpdate);
-  }, []);
+  }, [projectstructure, fileContent]);
 
   // Handle incoming code updates
   useEffect(() => {
@@ -97,7 +102,7 @@ export default function useEditorSync({
     return () => socket.off("code-change", handleCodeChange);
   }, []);
 
-  // Broadcast file changes
+  // Broadcast code change
   useEffect(() => {
     if (!activeFile || !hasLoadedFiles) return;
     const socket = socketRef?.current;
@@ -109,7 +114,7 @@ export default function useEditorSync({
     socket.emit("code-change", { roomId, filePath: activeFile, code });
   }, [fileContent, activeFile, roomId, hasLoadedFiles]);
 
-  // Debounced structure/code sync
+  // Broadcast structure updates with debounce
   useEffect(() => {
     if (!hasLoadedFiles || preventEmitRef.current) return;
 
@@ -129,12 +134,12 @@ export default function useEditorSync({
         });
         prevStructureRef.current = projectstructure;
         prevFileContentRef.current = fileContent;
-        console.log("📤 Structure emitted");
+        console.log("📤 Structure broadcasted");
       }
-    }, 300); // debounce
-  }, [projectstructure, fileContent, hasLoadedFiles]);
+    }, 300);
+  }, [projectstructure, fileContent, hasLoadedFiles, roomId]);
 
-  // Periodic DB autosave
+  // Auto-save to DB every 3s
   useEffect(() => {
     if (!hasLoadedFiles) return;
     const timeout = setTimeout(() => {
@@ -149,6 +154,7 @@ export default function useEditorSync({
         }),
       }).catch((err) => console.error("🧨 Auto-save failed:", err));
     }, 3000);
+
     return () => clearTimeout(timeout);
   }, [fileContent, projectstructure, title, hasLoadedFiles]);
 
@@ -157,7 +163,10 @@ export default function useEditorSync({
     const socket = socketRef?.current;
     if (!socket || !roomId) return;
 
-    const handleActiveUsersUpdate = (users) => setActiveUsers(users);
+    const handleActiveUsersUpdate = (users) => {
+      setActiveUsers(users);
+    };
+
     socket.on("active-users-update", handleActiveUsersUpdate);
     return () => socket.off("active-users-update", handleActiveUsersUpdate);
   }, [roomId, setActiveUsers]);
