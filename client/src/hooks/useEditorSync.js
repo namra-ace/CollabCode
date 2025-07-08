@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import toast from "react-hot-toast";
+import { deepEqual } from "../utils/deepEqual";
 
 export default function useEditorSync({
   roomId,
@@ -80,14 +81,20 @@ export default function useEditorSync({
         console.log("📥 Ignored own structure update");
         return;
       }
-
-      console.log("📥 Received structure update");
+    
+      const isSame = deepEqual(structure, projectstructure) &&
+                     deepEqual(files, fileContent);
+    
+      if (isSame) {
+        console.log("📥 Received but ignored identical structure");
+        return;
+      }
+    
+      console.log("📥 Applying structure update");
       setFileContent(files || {});
-      setProjectStructure(
-        structure || { type: "folder", name: "root", children: [] }
-      );
-      lastStructureJSON.current = JSON.stringify(structure || {});
+      setProjectStructure(structure || { type: "folder", name: "root", children: [] });
     };
+    
 
     socket.on("structure-update", handleStructureUpdate);
     return () => socket.off("structure-update", handleStructureUpdate);
@@ -152,25 +159,27 @@ export default function useEditorSync({
   useEffect(() => {
     const socket = socketRef?.current;
     if (!socket || !hasLoadedFiles) return;
-
-    const currentStructureJSON = JSON.stringify(projectstructure);
-    if (currentStructureJSON === lastStructureJSON.current) return;
-
-    lastStructureJSON.current = currentStructureJSON;
-    preventStructureEmitRef.current = true;
-
-    socket.emit("structure-update", {
-      roomId,
-      structure: projectstructure,
-      files: fileContent,
-    });
-
-    console.log("📤 Structure update sent");
-
-    setTimeout(() => {
-      preventStructureEmitRef.current = false;
-    }, 50);
-  }, [projectstructure, fileContent, roomId, hasLoadedFiles]);
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return;
+    }
+  
+    const timeout = setTimeout(() => {
+      preventStructureEmitRef.current = true;
+      socket.emit("structure-update", {
+        roomId,
+        structure: projectstructure,
+        files: fileContent,
+      });
+      console.log("📤 Structure broadcasted");
+      setTimeout(() => {
+        preventStructureEmitRef.current = false;
+      }, 100); // Give buffer time
+    }, 300); // Debounce time
+  
+    return () => clearTimeout(timeout);
+  }, [projectstructure, hasLoadedFiles]);
+  
 
   // Active users update
   useEffect(() => {
