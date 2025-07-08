@@ -19,6 +19,7 @@ export default function useEditorSync({
   const preventStructureEmitRef = useRef(false);
   const lastSavedRef = useRef(Date.now());
   const isInitialMountRef = useRef(true);
+  const API_BASE = import.meta.env.VITE_API_URL;
 
   // Load from socket or fallback DB
   useEffect(() => {
@@ -30,7 +31,7 @@ export default function useEditorSync({
     const timeout = setTimeout(async () => {
       if (!hasLoadedFiles) {
         try {
-          const res = await fetch(`http://localhost:5000/api/room/${roomId}`);
+          const res = await fetch(`${API_BASE}/api/room/${roomId}`);
           if (res.ok) {
             const data = await res.json();
             setFileContent(data.files || {});
@@ -126,7 +127,7 @@ export default function useEditorSync({
     if (now - lastSavedRef.current < 1000) return;
 
     const timeout = setTimeout(() => {
-      fetch("http://localhost:5000/api/save", {
+      fetch(`${API_BASE}/api/save`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

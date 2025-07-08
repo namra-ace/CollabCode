@@ -5,11 +5,12 @@ import { useNavigate } from 'react-router-dom'; // ⬅️ Add this
 const useSocket = (roomId) => {
   const socketRef = useRef();
   const navigate = useNavigate(); // ⬅️ Add this
+  const API_BASE = import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     if (!roomId) return;
 
-    socketRef.current = io('http://localhost:5000');
+    socketRef.current = io(`${API_BASE}`);
 
     const token = localStorage.getItem("token");
     const username = localStorage.getItem("username") || "Guest";
