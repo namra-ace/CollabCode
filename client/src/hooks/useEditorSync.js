@@ -62,12 +62,6 @@ export default function useEditorSync({
       currentlyPreventing: preventBroadcastRef.current 
     });
 
-    // Skip if we're already preventing broadcasts
-    if (preventBroadcastRef.current) {
-      console.log("🚫 Skipped - currently preventing broadcasts");
-      return;
-    }
-
     // Check if data actually changed
     if (
       isEqual(structure, prevStructureRef.current) &&
@@ -78,8 +72,7 @@ export default function useEditorSync({
     }
 
     console.log("📥 Applied structure update");
-    preventBroadcastRef.current = true;
-
+    
     const safeFiles = files || {};
     const safeStructure = structure || { type: "folder", name: "root", children: [] };
 
@@ -90,12 +83,12 @@ export default function useEditorSync({
     prevStructureRef.current = cloneDeep(safeStructure);
     prevFileContentRef.current = cloneDeep(safeFiles);
 
-    // Reset prevention flag with dynamic timeout based on data size
-    const resetTimeout = Object.keys(safeFiles).length > 10 ? 1000 : 500;
+    // Only prevent our own broadcasts temporarily to avoid echo
+    preventBroadcastRef.current = true;
     setTimeout(() => {
       preventBroadcastRef.current = false;
       console.log("🔓 Broadcast prevention lifted");
-    }, resetTimeout);
+    }, 100); // Much shorter timeout, just to prevent immediate echo
   }, [setFileContent, setProjectStructure]);
 
   const handleCodeChange = useCallback(({ filePath, code }) => {
@@ -200,11 +193,8 @@ export default function useEditorSync({
 
   // Outgoing structure update with improved stability
   useEffect(() => {
-    if (!hasLoadedFiles || preventBroadcastRef.current) {
-      console.log("🚫 Skipping outgoing structure update", { 
-        hasLoadedFiles, 
-        preventing: preventBroadcastRef.current 
-      });
+    if (!hasLoadedFiles) {
+      console.log("🚫 Skipping outgoing structure update - files not loaded");
       return;
     }
 
@@ -223,10 +213,14 @@ export default function useEditorSync({
     
     emitTimeoutRef.current = setTimeout(() => {
       const socket = socketRef?.current;
-      if (socket && !preventBroadcastRef.current) {
+      if (socket) {
+        // Only skip if we're in the brief prevention period after receiving an update
+        if (preventBroadcastRef.current) {
+          console.log("🚫 Skipped emit - preventing echo");
+          return;
+        }
+
         console.log("📤 Emitting structure update");
-        
-        preventBroadcastRef.current = true;
         
         socket.emit("structure-update", {
           roomId,
@@ -240,14 +234,8 @@ export default function useEditorSync({
         prevFileContentRef.current = cloneDeep(fileContent);
         
         console.log("📤 Structure broadcasted");
-        
-        // Reset prevention flag
-        setTimeout(() => {
-          preventBroadcastRef.current = false;
-          console.log("🔓 Broadcast prevention lifted after emission");
-        }, 1000);
       } else {
-        console.log("🚫 Skipped emit - no socket or preventing");
+        console.log("🚫 Skipped emit - no socket");
       }
     }, 300);
   }, [projectstructure, fileContent, hasLoadedFiles, roomId, socketRef, cleanupTimeouts]);
