@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import toast from "react-hot-toast";
 import isEqual from "lodash.isequal";
 
@@ -22,6 +22,50 @@ export default function useEditorSync({
   const API_BASE = import.meta.env.VITE_API_URL;
 
   const preventBroadcastRef = useRef(false); // 🔒 block self-trigger
+
+  // Memoize handlers to prevent recreation on every render
+  const handleLoad = useCallback(({ files, structure, title }) => {
+    setFileContent(files || {});
+    setProjectStructure(structure || { type: "folder", name: "root", children: [] });
+    setTitle?.(title || "");
+    setHasLoadedFiles(true);
+    prevStructureRef.current = structure || {};
+    prevFileContentRef.current = files || {};
+  }, [setFileContent, setProjectStructure, setTitle, setHasLoadedFiles]);
+
+  const handleStructureUpdate = useCallback(({ structure, files }) => {
+    if (
+      isEqual(structure, prevStructureRef.current) &&
+      isEqual(files, prevFileContentRef.current)
+    ) {
+      console.log("📥 Skipped identical incoming structure");
+      return;
+    }
+
+    console.log("📥 Applied structure update");
+    preventBroadcastRef.current = true;
+    setFileContent(files || {});
+    setProjectStructure(structure || { type: "folder", name: "root", children: [] });
+    prevStructureRef.current = structure;
+    prevFileContentRef.current = files;
+
+    // Reset after short delay
+    setTimeout(() => {
+      preventBroadcastRef.current = false;
+    }, 100);
+  }, [setFileContent, setProjectStructure]);
+
+  const handleCodeChange = useCallback(({ filePath, code }) => {
+    setFileContent((prev) => ({ ...prev, [filePath]: code }));
+    prevFileContentRef.current = {
+      ...prevFileContentRef.current,
+      [filePath]: code,
+    };
+  }, [setFileContent]);
+
+  const handleActiveUsersUpdate = useCallback((users) => {
+    setActiveUsers(users);
+  }, [setActiveUsers]);
 
   // Load from socket or fallback to DB
   useEffect(() => {
@@ -52,72 +96,32 @@ export default function useEditorSync({
       }
     }, 2000);
 
-    const handleLoad = ({ files, structure, title }) => {
-      clearTimeout(timeout);
-      setFileContent(files || {});
-      setProjectStructure(structure || { type: "folder", name: "root", children: [] });
-      setTitle?.(title || "");
-      setHasLoadedFiles(true);
-      prevStructureRef.current = structure || {};
-      prevFileContentRef.current = files || {};
-    };
-
     socket.on("load-all-files", handleLoad);
     return () => {
       socket.off("load-all-files", handleLoad);
       clearTimeout(timeout);
     };
-  }, [roomId, hasLoadedFiles]);
+  }, [roomId, hasLoadedFiles, handleLoad, API_BASE, setFileContent, setProjectStructure, setTitle, setHasLoadedFiles]);
 
   // Incoming structure update
   useEffect(() => {
     const socket = socketRef?.current;
     if (!socket) return;
 
-    const handleStructureUpdate = ({ structure, files }) => {
-      if (
-        isEqual(structure, prevStructureRef.current) &&
-        isEqual(files, prevFileContentRef.current)
-      ) {
-        console.log("📥 Skipped identical incoming structure");
-        return;
-      }
-
-      console.log("📥 Applied structure update");
-      preventBroadcastRef.current = true;
-      setFileContent(files || {});
-      setProjectStructure(structure || { type: "folder", name: "root", children: [] });
-      prevStructureRef.current = structure;
-      prevFileContentRef.current = files;
-
-      // Reset after short delay
-      setTimeout(() => {
-        preventBroadcastRef.current = false;
-      }, 100);
-    };
-
     socket.on("structure-update", handleStructureUpdate);
     return () => socket.off("structure-update", handleStructureUpdate);
-  }, []);
+  }, [handleStructureUpdate]);
 
   // Incoming code changes
   useEffect(() => {
     const socket = socketRef?.current;
     if (!socket) return;
 
-    const handleCodeChange = ({ filePath, code }) => {
-      setFileContent((prev) => ({ ...prev, [filePath]: code }));
-      prevFileContentRef.current = {
-        ...prevFileContentRef.current,
-        [filePath]: code,
-      };
-    };
-
     socket.on("code-change", handleCodeChange);
     return () => socket.off("code-change", handleCodeChange);
-  }, []);
+  }, [handleCodeChange]);
 
-  // Outgoing code change
+  // Outgoing code change - Use separate effect with proper dependencies
   useEffect(() => {
     if (!activeFile || !hasLoadedFiles) return;
     const socket = socketRef?.current;
@@ -125,16 +129,21 @@ export default function useEditorSync({
 
     const code = fileContent?.[activeFile];
     const prevCode = prevFileContentRef.current?.[activeFile];
-    if (code !== prevCode) {
+    
+    // Only emit if code actually changed
+    if (code !== prevCode && code !== undefined) {
       socket.emit("code-change", { roomId, filePath: activeFile, code });
-      prevFileContentRef.current = {
-        ...prevFileContentRef.current,
-        [activeFile]: code,
-      };
+      // Update ref in a separate microtask to avoid timing issues
+      Promise.resolve().then(() => {
+        prevFileContentRef.current = {
+          ...prevFileContentRef.current,
+          [activeFile]: code,
+        };
+      });
     }
   }, [fileContent, activeFile, roomId, hasLoadedFiles]);
 
-  // Outgoing structure update
+  // Outgoing structure update - Add stability checks
   useEffect(() => {
     if (!hasLoadedFiles || preventBroadcastRef.current) return;
 
@@ -144,24 +153,37 @@ export default function useEditorSync({
     if (!changedStructure && !changedFiles) return;
 
     if (emitTimeoutRef.current) clearTimeout(emitTimeoutRef.current);
+    
     emitTimeoutRef.current = setTimeout(() => {
       const socket = socketRef?.current;
-      if (socket) {
+      if (socket && !preventBroadcastRef.current) {
         socket.emit("structure-update", {
           roomId,
           structure: projectstructure,
           files: fileContent,
         });
-        prevStructureRef.current = projectstructure;
-        prevFileContentRef.current = fileContent;
+        
+        // Update refs in next tick to prevent immediate re-trigger
+        Promise.resolve().then(() => {
+          prevStructureRef.current = projectstructure;
+          prevFileContentRef.current = fileContent;
+        });
+        
         console.log("📤 Structure broadcasted");
       }
     }, 300);
+
+    return () => {
+      if (emitTimeoutRef.current) {
+        clearTimeout(emitTimeoutRef.current);
+      }
+    };
   }, [projectstructure, fileContent, hasLoadedFiles, roomId]);
 
   // Periodic autosave to DB
   useEffect(() => {
     if (!hasLoadedFiles) return;
+    
     const timeout = setTimeout(() => {
       fetch(`${API_BASE}/api/save`, {
         method: "POST",
@@ -176,18 +198,14 @@ export default function useEditorSync({
     }, 3000);
 
     return () => clearTimeout(timeout);
-  }, [fileContent, projectstructure, title, hasLoadedFiles]);
+  }, [fileContent, projectstructure, title, hasLoadedFiles, roomId, API_BASE]);
 
   // Active users update
   useEffect(() => {
     const socket = socketRef?.current;
     if (!socket || !roomId) return;
 
-    const handleActiveUsersUpdate = (users) => {
-      setActiveUsers(users);
-    };
-
     socket.on("active-users-update", handleActiveUsersUpdate);
     return () => socket.off("active-users-update", handleActiveUsersUpdate);
-  }, [roomId, setActiveUsers]);
+  }, [roomId, handleActiveUsersUpdate]);
 }
