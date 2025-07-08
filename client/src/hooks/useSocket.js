@@ -1,32 +1,32 @@
-import { useEffect, useRef } from 'react';
-import { io } from 'socket.io-client';
-import { useNavigate } from 'react-router-dom'; // ⬅️ Add this
+import { useEffect, useRef } from "react";
+import { io } from "socket.io-client";
+import { useNavigate } from "react-router-dom";
 
 const useSocket = (roomId) => {
   const socketRef = useRef();
-  const navigate = useNavigate(); // ⬅️ Add this
+  const navigate = useNavigate();
   const API_BASE = import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     if (!roomId) return;
 
-    socketRef.current = io(`${API_BASE}`);
+    const socket = io(API_BASE, { reconnection: true });
+    socketRef.current = socket;
 
     const token = localStorage.getItem("token");
     const username = localStorage.getItem("username") || "Guest";
 
-    // 💥 Proper handling of room-error
-    socketRef.current.on("room-error", (err) => {
-      alert(err.message || "Something went wrong");
-      navigate("/"); // or navigate("/error-page") if you have one
+    socket.on("connect", () => {
+      socket.emit("join-room", roomId, { username, token });
     });
 
-    socketRef.current.emit("join-room", roomId, { username, token });
+    socket.on("room-error", (err) => {
+      alert(err.message || "Room join failed");
+      navigate("/");
+    });
 
-    return () => {
-      socketRef.current.disconnect();
-    };
-  }, [roomId, navigate]);
+    return () => socket.disconnect();
+  }, [roomId]);
 
   return socketRef;
 };

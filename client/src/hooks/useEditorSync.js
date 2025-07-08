@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import toast from "react-hot-toast";
+import isEqual from "lodash.isequal";
 
 export default function useEditorSync({
   roomId,
@@ -12,16 +13,16 @@ export default function useEditorSync({
   setHasLoadedFiles,
   activeFile,
   setActiveUsers,
-  title,             // 🆕
-  setTitle,          // 🆕
+  title,
+  setTitle,
 }) {
+  const prevStructureRef = useRef(null);
+  const prevFileContentRef = useRef({});
+  const emitTimeoutRef = useRef(null);
   const preventEmitRef = useRef(false);
-  const preventStructureEmitRef = useRef(false);
-  const lastSavedRef = useRef(Date.now());
-  const isInitialMountRef = useRef(true);
   const API_BASE = import.meta.env.VITE_API_URL;
 
-  // Load from socket or fallback DB
+  // Load from socket or DB
   useEffect(() => {
     const socket = socketRef?.current;
     if (!socket || !roomId) return;
@@ -32,13 +33,11 @@ export default function useEditorSync({
       if (!hasLoadedFiles) {
         try {
           const res = await fetch(`${API_BASE}/api/room/${roomId}`);
+          const data = await res.json();
           if (res.ok) {
-            const data = await res.json();
             setFileContent(data.files || {});
-            setProjectStructure(
-              data.structure || { type: "folder", name: "root", children: [] }
-            );
-            setTitle?.(data.title || ""); // 🆕
+            setProjectStructure(data.structure || { type: "folder", name: "root", children: [] });
+            setTitle?.(data.title || "");
           } else {
             console.error("❌ DB fetch error:", res.status);
           }
@@ -53,10 +52,8 @@ export default function useEditorSync({
     const handleLoad = ({ files, structure, title }) => {
       clearTimeout(timeout);
       setFileContent(files || {});
-      setProjectStructure(
-        structure || { type: "folder", name: "root", children: [] }
-      );
-      setTitle?.(title || ""); // 🆕
+      setProjectStructure(structure || { type: "folder", name: "root", children: [] });
+      setTitle?.(title || "");
       setHasLoadedFiles(true);
     };
 
@@ -67,29 +64,25 @@ export default function useEditorSync({
     };
   }, [roomId, hasLoadedFiles]);
 
-  // Incoming structure updates
+  // Handle incoming structure update
   useEffect(() => {
     const socket = socketRef?.current;
     if (!socket) return;
 
     const handleStructureUpdate = ({ structure, files }) => {
-      if (preventStructureEmitRef.current) {
-        console.log("📥 Ignored own structure update");
-        return;
-      }
-
-      console.log("📥 Received structure update");
+      preventEmitRef.current = true;
       setFileContent(files || {});
-      setProjectStructure(
-        structure || { type: "folder", name: "root", children: [] }
-      );
+      setProjectStructure(structure || { type: "folder", name: "root", children: [] });
+      prevStructureRef.current = structure;
+      prevFileContentRef.current = files;
+      setTimeout(() => (preventEmitRef.current = false), 50);
     };
 
     socket.on("structure-update", handleStructureUpdate);
     return () => socket.off("structure-update", handleStructureUpdate);
   }, []);
 
-  // Incoming code changes
+  // Handle incoming code updates
   useEffect(() => {
     const socket = socketRef?.current;
     if (!socket) return;
@@ -104,7 +97,7 @@ export default function useEditorSync({
     return () => socket.off("code-change", handleCodeChange);
   }, []);
 
-  // Emit code changes
+  // Broadcast file changes
   useEffect(() => {
     if (!activeFile || !hasLoadedFiles) return;
     const socket = socketRef?.current;
@@ -113,19 +106,37 @@ export default function useEditorSync({
     const code = fileContent?.[activeFile];
     if (code === undefined) return;
 
-    socket.emit("code-change", {
-      roomId,
-      filePath: activeFile,
-      code,
-    });
-  }, [activeFile, fileContent, roomId, hasLoadedFiles]);
+    socket.emit("code-change", { roomId, filePath: activeFile, code });
+  }, [fileContent, activeFile, roomId, hasLoadedFiles]);
 
-  // Auto-save to DB every 3s
+  // Debounced structure/code sync
+  useEffect(() => {
+    if (!hasLoadedFiles || preventEmitRef.current) return;
+
+    const changedStructure = !isEqual(projectstructure, prevStructureRef.current);
+    const changedFiles = !isEqual(fileContent, prevFileContentRef.current);
+
+    if (!changedStructure && !changedFiles) return;
+
+    if (emitTimeoutRef.current) clearTimeout(emitTimeoutRef.current);
+    emitTimeoutRef.current = setTimeout(() => {
+      const socket = socketRef?.current;
+      if (socket) {
+        socket.emit("structure-update", {
+          roomId,
+          structure: projectstructure,
+          files: fileContent,
+        });
+        prevStructureRef.current = projectstructure;
+        prevFileContentRef.current = fileContent;
+        console.log("📤 Structure emitted");
+      }
+    }, 300); // debounce
+  }, [projectstructure, fileContent, hasLoadedFiles]);
+
+  // Periodic DB autosave
   useEffect(() => {
     if (!hasLoadedFiles) return;
-    const now = Date.now();
-    if (now - lastSavedRef.current < 1000) return;
-
     const timeout = setTimeout(() => {
       fetch(`${API_BASE}/api/save`, {
         method: "POST",
@@ -134,43 +145,19 @@ export default function useEditorSync({
           roomId,
           files: fileContent,
           structure: projectstructure,
-          title, // 🆕
+          title,
         }),
       }).catch((err) => console.error("🧨 Auto-save failed:", err));
-
-      lastSavedRef.current = Date.now();
     }, 3000);
-
     return () => clearTimeout(timeout);
-  }, [fileContent, projectstructure, title, hasLoadedFiles]); // 🆕 added `title`
+  }, [fileContent, projectstructure, title, hasLoadedFiles]);
 
-  // Broadcast structure
-  useEffect(() => {
-    const socket = socketRef?.current;
-    if (!socket || !hasLoadedFiles) return;
-    if (isInitialMountRef.current) {
-      isInitialMountRef.current = false;
-      return;
-    }
-
-    preventStructureEmitRef.current = true;
-    socket.emit("structure-update", {
-      roomId,
-      structure: projectstructure,
-      files: fileContent,
-    });
-    setTimeout(() => (preventStructureEmitRef.current = false), 50);
-  }, [projectstructure, hasLoadedFiles]);
-
-  // Active users update
+  // Active user updates
   useEffect(() => {
     const socket = socketRef?.current;
     if (!socket || !roomId) return;
 
-    const handleActiveUsersUpdate = (users) => {
-      setActiveUsers(users);
-    };
-
+    const handleActiveUsersUpdate = (users) => setActiveUsers(users);
     socket.on("active-users-update", handleActiveUsersUpdate);
     return () => socket.off("active-users-update", handleActiveUsersUpdate);
   }, [roomId, setActiveUsers]);
