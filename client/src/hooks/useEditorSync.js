@@ -33,7 +33,20 @@ export default function useEditorSync({
     prevFileContentRef.current = files || {};
   }, [setFileContent, setProjectStructure, setTitle, setHasLoadedFiles]);
 
-  const handleStructureUpdate = useCallback(({ structure, files }) => {
+  const handleStructureUpdate = useCallback(({ structure, files, fromUserId }) => {
+    console.log("📥 Received structure update", { 
+      fromUserId, 
+      hasFiles: !!files, 
+      hasStructure: !!structure,
+      currentlyPreventing: preventBroadcastRef.current 
+    });
+
+    // Skip if we're already preventing broadcasts (this might be our own update bouncing back)
+    if (preventBroadcastRef.current) {
+      console.log("🚫 Skipped - currently preventing broadcasts");
+      return;
+    }
+
     if (
       isEqual(structure, prevStructureRef.current) &&
       isEqual(files, prevFileContentRef.current)
@@ -49,10 +62,11 @@ export default function useEditorSync({
     prevStructureRef.current = structure;
     prevFileContentRef.current = files;
 
-    // Reset after short delay
+    // Reset after longer delay to ensure we don't immediately broadcast again
     setTimeout(() => {
       preventBroadcastRef.current = false;
-    }, 100);
+      console.log("🔓 Broadcast prevention lifted");
+    }, 500);
   }, [setFileContent, setProjectStructure]);
 
   const handleCodeChange = useCallback(({ filePath, code }) => {
@@ -145,31 +159,54 @@ export default function useEditorSync({
 
   // Outgoing structure update - Add stability checks
   useEffect(() => {
-    if (!hasLoadedFiles || preventBroadcastRef.current) return;
+    if (!hasLoadedFiles || preventBroadcastRef.current) {
+      console.log("🚫 Skipping outgoing structure update", { 
+        hasLoadedFiles, 
+        preventing: preventBroadcastRef.current 
+      });
+      return;
+    }
 
     const changedStructure = !isEqual(projectstructure, prevStructureRef.current);
     const changedFiles = !isEqual(fileContent, prevFileContentRef.current);
 
-    if (!changedStructure && !changedFiles) return;
+    if (!changedStructure && !changedFiles) {
+      console.log("📊 No changes detected in structure or files");
+      return;
+    }
+
+    console.log("📊 Changes detected", { changedStructure, changedFiles });
 
     if (emitTimeoutRef.current) clearTimeout(emitTimeoutRef.current);
     
     emitTimeoutRef.current = setTimeout(() => {
       const socket = socketRef?.current;
       if (socket && !preventBroadcastRef.current) {
+        console.log("📤 Emitting structure update");
+        
+        // Set prevention flag BEFORE emitting to prevent immediate feedback
+        preventBroadcastRef.current = true;
+        
         socket.emit("structure-update", {
           roomId,
           structure: projectstructure,
           files: fileContent,
+          fromUserId: socket.id, // Add sender ID to help debug
         });
         
-        // Update refs in next tick to prevent immediate re-trigger
-        Promise.resolve().then(() => {
-          prevStructureRef.current = projectstructure;
-          prevFileContentRef.current = fileContent;
-        });
+        // Update refs immediately to prevent re-emission
+        prevStructureRef.current = JSON.parse(JSON.stringify(projectstructure));
+        prevFileContentRef.current = JSON.parse(JSON.stringify(fileContent));
         
         console.log("📤 Structure broadcasted");
+        
+        // Reset prevention flag after a delay
+        setTimeout(() => {
+          preventBroadcastRef.current = false;
+          console.log("🔓 Broadcast prevention lifted after emission");
+        }, 1000);
+      } else {
+        console.log("🚫 Skipped emit - no socket or preventing");
       }
     }, 300);
 
