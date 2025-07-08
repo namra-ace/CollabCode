@@ -5,11 +5,12 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(() => localStorage.getItem("token") || null);
   const [user, setUser] = useState(null);
+  const API_BASE = import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const res = await fetch("http://localhost:5000/api/me", {
+        const res = await fetch(`${API_BASE}/api/me`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
