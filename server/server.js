@@ -9,70 +9,36 @@ const mongoose = require("mongoose");
 const codeSocket = require("./sockets/codeSocket");
 const authRoutes = require("./routes/authRoutes");
 const optionallyVerifyToken = require("./middleware/optionallyVerifyToken");
-const authenticateJWT = require("./middleware/authenticateJWT");
 
 const Project = require("./models/Project");
 const User = require("./models/User");
 
 const app = express();
 const server = http.createServer(app);
+const authenticateJWT = require('./middleware/authenticateJWT')
 
-// ✅ Setup Allowed Origins
-const LOCAL_ORIGIN = "http://localhost:5173";
-const DEPLOYED_ORIGIN = process.env.FRONTEND_URL;
-
-if (!DEPLOYED_ORIGIN) {
-  console.warn("⚠️ FRONTEND_URL is not defined in .env");
-}
-
-const allowedOrigins = [LOCAL_ORIGIN];
-if (DEPLOYED_ORIGIN) allowedOrigins.push(DEPLOYED_ORIGIN);
-
-console.log("✅ Allowed Origins:", allowedOrigins);
-
-// ✅ CORS Middleware
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    console.error("❌ CORS blocked origin:", origin);
-    return callback(new Error("Not allowed by CORS"));
+const io = new Server(server, {
+  cors: {
+    origin: "http://localhost:5173",
+    methods: ["GET", "POST"],
   },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-}));
+});
 
-// ✅ Express Setup
-app.use(express.json());
-app.use("/api/auth", authRoutes);
-
-// ✅ MongoDB Connection
+// Connect to MongoDB
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ Database connected"))
   .catch((err) => console.error("❌ Database connection error:", err));
 
-// ✅ Socket.IO Setup
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ["GET", "POST"],
-    credentials: true,
-  },
-});
-
-io.on("connection", (socket) => {
-  console.log("⚡ User connected:", socket.id);
-  codeSocket(socket, io);
-});
-
-// ✅ Routes
-app.get("/", (req, res) => res.send("🚀 Server running"));
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use("/api/auth", authRoutes);
 
 app.post("/api/create-room", async (req, res) => {
   try {
     const { roomId, title } = req.body;
+
     if (!roomId) return res.status(400).json({ error: "Missing roomId" });
 
     const exists = await Project.findOne({ roomId });
@@ -94,6 +60,8 @@ app.post("/api/create-room", async (req, res) => {
   }
 });
 
+
+// Save project
 app.post("/api/save", optionallyVerifyToken, async (req, res) => {
   const { roomId, files, structure, title } = req.body;
   if (!roomId || !files || !structure) {
@@ -125,6 +93,7 @@ app.post("/api/save", optionallyVerifyToken, async (req, res) => {
   }
 });
 
+// Load project
 app.get("/api/room/:roomId", optionallyVerifyToken, async (req, res) => {
   try {
     const project = await Project.findOne({ roomId: req.params.roomId });
@@ -143,6 +112,7 @@ app.get("/api/room/:roomId", optionallyVerifyToken, async (req, res) => {
   }
 });
 
+// Download project as ZIP
 app.get("/api/download/:roomId", async (req, res) => {
   try {
     const project = await Project.findOne({ roomId: req.params.roomId });
@@ -176,6 +146,7 @@ app.get("/api/download/:roomId", async (req, res) => {
   }
 });
 
+// Get rooms created/visited by authenticated user
 app.get("/api/my-rooms", optionallyVerifyToken, async (req, res) => {
   if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 
@@ -196,9 +167,19 @@ app.get("/api/my-rooms", optionallyVerifyToken, async (req, res) => {
 });
 
 app.get("/api/me", authenticateJWT, (req, res) => {
+
   res.json({ username: req.user.username, email: req.user.email });
 });
 
-// ✅ Start Server
+
+// Socket.io handling
+io.on("connection", (socket) => {
+  console.log("⚡ User connected:", socket.id);
+  codeSocket(socket, io);
+});
+
+// Default health check
+app.get("/", (req, res) => res.send("🚀 Server running"));
+
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`🚀 Server listening on port ${PORT}`));

@@ -35,15 +35,14 @@ function ProjectSidebar({
     const fullPath = path.join("/");
     setExpandedFolders((prev) => new Set(prev).add(fullPath));
     setAddingItem({ type, path });
-    setInputName("");
   };
 
   const confirmAdd = () => {
     if (!inputName.trim() || !addingItem) return;
     const newNode =
       addingItem.type === "file"
-        ? { type: "file", name: inputName.trim() }
-        : { type: "folder", name: inputName.trim(), children: [] };
+        ? { type: "file", name: inputName }
+        : { type: "folder", name: inputName, children: [] };
     onAddNode(newNode, addingItem.path);
     setAddingItem(null);
     setInputName("");
@@ -51,7 +50,7 @@ function ProjectSidebar({
 
   const confirmRename = () => {
     if (!inputName.trim() || !renamingPath) return;
-    onRenameNode(renamingPath, inputName.trim());
+    onRenameNode(renamingPath, inputName);
     setRenamingPath(null);
     setInputName("");
   };
@@ -61,46 +60,91 @@ function ProjectSidebar({
       const fullPath = [...path, node.name].join("/");
       const isRenaming = renamingPath === fullPath;
       const isExpanded = expandedFolders.has(fullPath);
-      const isFile = node.type === "file";
 
-      const baseClasses = `transition-all duration-200 ease-in-out px-2 py-1 rounded flex justify-between items-center text-sm ${
+      const baseClasses = `transition-all duration-200 ease-in-out hover:scale-[1.01] px-2 py-1 rounded flex justify-between items-center text-sm ${
         fullPath === activeFile
           ? "bg-blue-600 text-white shadow-md"
           : "hover:bg-gray-700 text-gray-300"
       }`;
 
-      return (
-        <div key={fullPath} className={isFile ? `pl-6 ${baseClasses}` : "pl-2 text-sm"}>
-          {isRenaming ? (
-            <>
-              <input
-                autoFocus
-                value={inputName}
-                onChange={(e) => setInputName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") confirmRename();
-                  if (e.key === "Escape") setRenamingPath(null);
-                }}
-                className="bg-gray-800 text-white px-2 py-1 rounded w-full outline-none"
-              />
-              <div className="ml-1 flex gap-1">
-                <FaSave className="text-green-400 cursor-pointer" onClick={confirmRename} />
-                <FaTimes className="text-red-400 cursor-pointer" onClick={() => setRenamingPath(null)} />
-              </div>
-            </>
-          ) : (
-            <>
-              <div
-                onClick={isFile ? () => onFileClick(fullPath) : () => toggleFolder(fullPath)}
-                className="flex items-center gap-2 w-full cursor-pointer"
-              >
-                {isFile ? <FaFile className="text-gray-400" /> : isExpanded ? <FaFolderOpen /> : <FaFolder />}
-                <span className={`${isFile ? "truncate" : "font-medium text-gray-200"}`}>{node.name}</span>
-              </div>
+      if (node.type === "file") {
+        return (
+          <div key={fullPath} className={`pl-6 ${baseClasses}`}>
+            {isRenaming ? (
+              <>
+                <input
+                  autoFocus
+                  value={inputName}
+                  onChange={(e) => setInputName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") confirmRename();
+                    if (e.key === "Escape") setRenamingPath(null);
+                  }}
+                  className="bg-gray-800 text-white px-2 py-1 rounded w-full outline-none"
+                />
+                <div className="ml-1 flex gap-1">
+                  <FaSave className="text-green-400 cursor-pointer" onClick={confirmRename} />
+                  <FaTimes className="text-red-400 cursor-pointer" onClick={() => setRenamingPath(null)} />
+                </div>
+              </>
+            ) : (
+              <>
+                <div onClick={() => onFileClick(fullPath)} className="flex items-center gap-2 w-full">
+                  <FaFile className="text-gray-400" />
+                  <span className="truncate">{node.name}</span>
+                </div>
+                <div className="flex gap-1 ml-1">
+                  <FaEdit
+                    title="Rename"
+                    onClick={() => {
+                      setRenamingPath(fullPath);
+                      setInputName(node.name);
+                    }}
+                    className="text-yellow-400 cursor-pointer"
+                  />
+                  <FaTrash
+                    title="Delete"
+                    onClick={() => onDeleteNode(fullPath)}
+                    className="text-red-400 cursor-pointer"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        );
+      }
 
-              <div className="flex gap-1 ml-1">
-                {!isFile && (
-                  <>
+      if (node.type === "folder") {
+        return (
+          <div key={fullPath} className="pl-2 text-sm">
+            <div className="flex justify-between items-center cursor-pointer hover:bg-gray-700 rounded py-1 px-1 transition-all">
+              {isRenaming ? (
+                <>
+                  <input
+                    autoFocus
+                    value={inputName}
+                    onChange={(e) => setInputName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") confirmRename();
+                      if (e.key === "Escape") setRenamingPath(null);
+                    }}
+                    className="bg-gray-800 text-white px-2 py-1 rounded w-full outline-none"
+                  />
+                  <div className="ml-1 flex gap-1">
+                    <FaSave className="text-green-400 cursor-pointer" onClick={confirmRename} />
+                    <FaTimes className="text-red-400 cursor-pointer" onClick={() => setRenamingPath(null)} />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div
+                    className="flex items-center gap-2 w-full"
+                    onClick={() => toggleFolder(fullPath)}
+                  >
+                    {isExpanded ? <FaFolderOpen /> : <FaFolder />}
+                    <span className="font-medium text-gray-200">{node.name}</span>
+                  </div>
+                  <div className="flex gap-1">
                     <FaPlus
                       title="Add File"
                       className="text-green-400 cursor-pointer"
@@ -111,49 +155,51 @@ function ProjectSidebar({
                       className="text-blue-400 cursor-pointer"
                       onClick={() => handleAddClick("folder", [...path, node.name])}
                     />
-                  </>
-                )}
-                <FaEdit
-                  title="Rename"
-                  className="text-yellow-400 cursor-pointer"
-                  onClick={() => {
-                    setRenamingPath(fullPath);
-                    setInputName(node.name);
-                  }}
-                />
-                <FaTrash
-                  title="Delete"
-                  className="text-red-400 cursor-pointer"
-                  onClick={() => onDeleteNode(fullPath)}
-                />
-              </div>
-            </>
-          )}
-
-          {node.type === "folder" && isExpanded && (
-            <div className="ml-4">
-              {renderTree(node.children || [], [...path, node.name])}
-              {addingItem && addingItem.path.join("/") === fullPath && (
-                <div className="flex items-center gap-1 mt-1">
-                  <input
-                    autoFocus
-                    value={inputName}
-                    onChange={(e) => setInputName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") confirmAdd();
-                      if (e.key === "Escape") setAddingItem(null);
-                    }}
-                    className="bg-gray-800 text-white px-2 py-1 rounded w-full outline-none"
-                    placeholder={`New ${addingItem.type}`}
-                  />
-                  <FaSave className="text-green-400 cursor-pointer" onClick={confirmAdd} />
-                  <FaTimes className="text-red-400 cursor-pointer" onClick={() => setAddingItem(null)} />
-                </div>
+                    <FaEdit
+                      title="Rename"
+                      className="text-yellow-400 cursor-pointer"
+                      onClick={() => {
+                        setRenamingPath(fullPath);
+                        setInputName(node.name);
+                      }}
+                    />
+                    <FaTrash
+                      title="Delete"
+                      className="text-red-400 cursor-pointer"
+                      onClick={() => onDeleteNode(fullPath)}
+                    />
+                  </div>
+                </>
               )}
             </div>
-          )}
-        </div>
-      );
+
+            {isExpanded && (
+              <div className="ml-4 transition-all duration-200">
+                {renderTree(node.children || [], [...path, node.name])}
+                {addingItem && addingItem.path.join("/") === fullPath && (
+                  <div className="flex items-center gap-1 mt-1">
+                    <input
+                      autoFocus
+                      value={inputName}
+                      onChange={(e) => setInputName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") confirmAdd();
+                        if (e.key === "Escape") setAddingItem(null);
+                      }}
+                      className="bg-gray-800 text-white px-2 py-1 rounded w-full outline-none"
+                      placeholder={`New ${addingItem.type}`}
+                    />
+                    <FaSave className="text-green-400 cursor-pointer" onClick={confirmAdd} />
+                    <FaTimes className="text-red-400 cursor-pointer" onClick={() => setAddingItem(null)} />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      return null;
     });
 
   useEffect(() => {

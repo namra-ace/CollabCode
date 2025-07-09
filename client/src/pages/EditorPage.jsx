@@ -22,8 +22,6 @@ import {
   handleAddNode,
 } from "./EditorPageParts/structureOperations";
 
-const API_BASE = import.meta.env.VITE_API_URL;
-
 function EditorPage() {
   const { token } = useAuth();
   const { roomId } = useParams();
@@ -46,7 +44,7 @@ function EditorPage() {
   const handleSave = async () => {
     if (!roomId) return toast.error("No room ID");
     try {
-      const res = await fetch(`${API_BASE}/api/save`, {
+      const res = await fetch("http://localhost:5000/api/save", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -69,7 +67,7 @@ function EditorPage() {
 
   const syncToDB = () => {
     if (!roomId || !hasLoadedFiles) return;
-    fetch(`${API_BASE}/api/save`, {
+    fetch("http://localhost:5000/api/save", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -206,7 +204,10 @@ function EditorPage() {
             <button
               onClick={() =>
                 roomId &&
-                window.open(`${API_BASE}/api/download/${roomId}`, "_blank")
+                window.open(
+                  `http://localhost:5000/api/download/${roomId}`,
+                  "_blank"
+                )
               }
               className="bg-blue-600 hover:bg-blue-700 p-2 rounded-lg shadow-sm text-white"
             >
@@ -268,7 +269,7 @@ function EditorPage() {
                       [activeFile]: newCode,
                     }))
                   }
-                  language={getLanguageFromExtension(activeFile) || "plaintext"}
+                  language={fileLanguage[activeFile] || "plaintext"}
                 />
               </motion.div>
             ) : (
