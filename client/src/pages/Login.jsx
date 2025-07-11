@@ -3,6 +3,9 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 
+// ✅ Backend URL from environment
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+
 function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -29,7 +32,7 @@ function Login() {
 
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:5000/api/auth/login", {
+      const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -39,8 +42,8 @@ function Login() {
 
       if (!res.ok) throw new Error(data.error || "Login failed");
 
-      login(data.token); // store token in context/localStorage
-      localStorage.setItem("username",data.username)
+      login(data.token);
+      localStorage.setItem("username", data.username);
       toast.success("✅ Logged in");
       navigate("/");
     } catch (err) {

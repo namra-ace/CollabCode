@@ -22,6 +22,9 @@ import {
   handleAddNode,
 } from "./EditorPageParts/structureOperations";
 
+// ✅ Backend URL that works for both localhost and deployed (Render)
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+
 function EditorPage() {
   const { token } = useAuth();
   const { roomId } = useParams();
@@ -44,7 +47,7 @@ function EditorPage() {
   const handleSave = async () => {
     if (!roomId) return toast.error("No room ID");
     try {
-      const res = await fetch("http://localhost:5000/api/save", {
+      const res = await fetch(`${BACKEND_URL}/api/save`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -67,7 +70,7 @@ function EditorPage() {
 
   const syncToDB = () => {
     if (!roomId || !hasLoadedFiles) return;
-    fetch("http://localhost:5000/api/save", {
+    fetch(`${BACKEND_URL}/api/save`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -204,10 +207,7 @@ function EditorPage() {
             <button
               onClick={() =>
                 roomId &&
-                window.open(
-                  `http://localhost:5000/api/download/${roomId}`,
-                  "_blank"
-                )
+                window.open(`${BACKEND_URL}/api/download/${roomId}`, "_blank")
               }
               className="bg-blue-600 hover:bg-blue-700 p-2 rounded-lg shadow-sm text-white"
             >

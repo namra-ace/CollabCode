@@ -10,6 +10,9 @@ import {
 import { motion } from "framer-motion";
 import { Sparkles, Code2, Clock } from "lucide-react";
 
+// ✅ Environment-based backend URL
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+
 function Home() {
   const [roomId, setRoomId] = useState("");
   const navigate = useNavigate();
@@ -25,7 +28,7 @@ function Home() {
         return;
       }
       try {
-        const res = await fetch("http://localhost:5000/api/my-rooms", {
+        const res = await fetch(`${BACKEND_URL}/api/my-rooms`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
@@ -47,7 +50,7 @@ function Home() {
       length: 3,
     });
     try {
-      const res = await fetch("http://localhost:5000/api/create-room", {
+      const res = await fetch(`${BACKEND_URL}/api/create-room`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ roomId: newRoomId }),
@@ -98,7 +101,10 @@ function Home() {
 
         {isAuthenticated && user?.username && (
           <p className="mb-6 text-xl text-center">
-            👋 Welcome back, <span className="text-yellow-300 font-semibold">{user.username}</span>
+            👋 Welcome back,{" "}
+            <span className="text-yellow-300 font-semibold">
+              {user.username}
+            </span>
           </p>
         )}
 
@@ -150,7 +156,9 @@ function Home() {
                       </h3>
                     </div>
                     {room.title && (
-                      <p className="text-sm text-gray-300 truncate">ID: {room.roomId}</p>
+                      <p className="text-sm text-gray-300 truncate">
+                        ID: {room.roomId}
+                      </p>
                     )}
                     <div className="flex items-center gap-1 mt-2 text-gray-400 text-xs">
                       <Clock size={14} />

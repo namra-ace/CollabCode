@@ -6,10 +6,12 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(() => localStorage.getItem("token") || null);
   const [user, setUser] = useState(null);
 
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const res = await fetch("http://localhost:5000/api/me", {
+        const res = await fetch(`${BACKEND_URL}/api/me`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -17,7 +19,7 @@ export const AuthProvider = ({ children }) => {
 
         if (res.ok) {
           const data = await res.json();
-          setUser(data); // expects { username: "...", email: "...", etc }
+          setUser(data); // expects { username, email, etc. }
         } else {
           console.error("Failed to fetch user");
           setUser(null);
@@ -33,7 +35,7 @@ export const AuthProvider = ({ children }) => {
     } else {
       setUser(null);
     }
-  }, [token]);
+  }, [token, BACKEND_URL]);
 
   const login = (token) => {
     localStorage.setItem("token", token);

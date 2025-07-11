@@ -1,6 +1,6 @@
-// src/pages/EditorPageParts/structureOperations.js
 import toast from "react-hot-toast";
 
+// Language mapping utility
 export function getLanguageFromExtension(filename) {
   const ext = filename.split(".").pop().toLowerCase();
   const map = {
@@ -13,9 +13,10 @@ export function getLanguageFromExtension(filename) {
     c: "cpp",
     java: "java",
   };
-  return map[ext] || "javascript"; // fallback
+  return map[ext] || "javascript"; // Fallback
 }
 
+// Add new file/folder into structure
 export function handleAddNode({
   newNode,
   path,
@@ -25,63 +26,66 @@ export function handleAddNode({
   setFileLanguage,
   setActiveFile,
   setOpenTabs,
-  syncToDB
+  syncToDB,
 }) {
+  const updatedStructure = structuredClone(projectstructure);
   const checkDuplicate = (nodes, name) => nodes.some((node) => node.name === name);
 
-  const updatedStructure = structuredClone(projectstructure);
-  const insert = (nodes, currentPath) => {
-    for (let node of nodes) {
-      if (node.type === "folder" && node.name === currentPath[0]) {
-        if (currentPath.length === 1) {
-          if (checkDuplicate(node.children, newNode.name)) {
-            toast.error(`Name "${newNode.name}" already exists`);
-            return false;
-          }
-          node.children.push(newNode);
-        } else {
-          return insert(node.children, currentPath.slice(1));
-        }
-        return true;
-      }
+  const insertNode = (nodes, currentPath) => {
+    if (currentPath.length === 0) {
+      if (checkDuplicate(nodes, newNode.name)) return "duplicate";
+      nodes.push(newNode);
+      return "success";
     }
-    return false;
+
+    const folder = nodes.find(
+      (node) => node.type === "folder" && node.name === currentPath[0]
+    );
+
+    if (!folder) return "not_found";
+
+    return insertNode(folder.children, currentPath.slice(1));
   };
 
-  let success = true;
-  if (path.length === 0) {
-    if (checkDuplicate(updatedStructure.children, newNode.name)) {
-      toast.error(`Name "${newNode.name}" already exists`);
-      return;
-    }
-    updatedStructure.children.push(newNode);
-  } else {
-    success = insert(updatedStructure.children, path);
-    if (!success) {
-      toast.error("Failed to add node - path not found");
-      return;
-    }
+  const result = insertNode(
+    updatedStructure.children,
+    [...path] // Clone path to avoid mutation
+  );
+
+  if (result === "duplicate") {
+    toast.error(`Name "${newNode.name}" already exists`);
+    return false;
+  }
+
+  if (result === "not_found") {
+    toast.error("❌ Invalid path — folder not found");
+    return false;
   }
 
   setProjectStructure(updatedStructure);
 
   if (newNode.type === "file") {
     const fullPath = path.length ? `${path.join("/")}/${newNode.name}` : newNode.name;
+
     setFileContent((prev) => ({
       ...prev,
       [fullPath]: `// ${newNode.name} content`,
     }));
+
     setFileLanguage((prev) => ({
       ...prev,
       [fullPath]: getLanguageFromExtension(newNode.name),
     }));
+
     setActiveFile(fullPath);
-    setOpenTabs((prev) => [...prev, fullPath]);
+    setOpenTabs((prev) => (prev.includes(fullPath) ? prev : [...prev, fullPath]));
   }
 
   syncToDB();
+  return true;
 }
 
+// Broadcast structure to all peers
 export function broadcastStructure({
   socket,
   hasLoadedFiles,
@@ -90,16 +94,19 @@ export function broadcastStructure({
   fileContent,
   roomId,
 }) {
-  if (socket && hasLoadedFiles && !preventStructureEmitRef.current) {
-    preventStructureEmitRef.current = true;
-    socket.emit("structure-update", {
-      roomId,
-      structure: projectstructure,
-      files: fileContent,
-    });
-    console.log("📤 Structure broadcasted:", projectstructure);
-    setTimeout(() => {
-      preventStructureEmitRef.current = false;
-    }, 100);
-  }
+  if (!socket || !hasLoadedFiles || preventStructureEmitRef.current) return;
+
+  preventStructureEmitRef.current = true;
+
+  socket.emit("structure-update", {
+    roomId,
+    structure: projectstructure,
+    files: fileContent,
+  });
+
+  console.log("📤 Structure broadcasted to room:", roomId);
+
+  setTimeout(() => {
+    preventStructureEmitRef.current = false;
+  }, 100); // Prevent flood
 }

@@ -3,6 +3,9 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 
+// ✅ Backend URL from environment
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+
 function Register() {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -24,7 +27,7 @@ function Register() {
 
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:5000/api/auth/register", {
+      const res = await fetch(`${BACKEND_URL}/api/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -35,7 +38,7 @@ function Register() {
       if (!res.ok) throw new Error(data.error || "Registration failed");
 
       login(data.token);
-      localStorage.setItem("username", data.username); // ✅ Fixed
+      localStorage.setItem("username", data.username);
       toast.success("🎉 Registered successfully");
       navigate("/");
     } catch (err) {
