@@ -56,8 +56,9 @@ module.exports = (socket, io) => {
     socket.to(roomId).emit("code-change", { filePath, code });
   });
 
-  socket.on("structure-update", ({ roomId, structure, files }) => {
-    io.to(roomId).emit("structure-update", { structure, files });
+  // ✅ Fixed: Include sender in structure-update
+  socket.on("structure-update", ({ roomId, structure, files, sender }) => {
+    io.to(roomId).emit("structure-update", { structure, files, sender });
   });
 
   socket.on("disconnect", () => {
