@@ -9,36 +9,53 @@ const mongoose = require("mongoose");
 const codeSocket = require("./sockets/codeSocket");
 const authRoutes = require("./routes/authRoutes");
 const optionallyVerifyToken = require("./middleware/optionallyVerifyToken");
+const authenticateJWT = require('./middleware/authenticateJWT');
 
 const Project = require("./models/Project");
 const User = require("./models/User");
 
 const app = express();
 const server = http.createServer(app);
-const authenticateJWT = require('./middleware/authenticateJWT')
 
+const allowedOrigins = [
+  "http://localhost:5173",
+  process.env.FRONTEND_URL
+];
+
+// Middleware: JSON and CORS
+app.use(express.json());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true
+}));
+
+// Socket.io
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: allowedOrigins,
     methods: ["GET", "POST"],
-  },
+    credentials: true
+  }
 });
 
-// Connect to MongoDB
-mongoose
-  .connect(process.env.MONGO_URI)
+// MongoDB Connection
+mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ Database connected"))
-  .catch((err) => console.error("❌ Database connection error:", err));
+  .catch(err => console.error("❌ Database connection error:", err));
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// Routes
 app.use("/api/auth", authRoutes);
 
+// Create Room
 app.post("/api/create-room", async (req, res) => {
   try {
     const { roomId, title } = req.body;
-
     if (!roomId) return res.status(400).json({ error: "Missing roomId" });
 
     const exists = await Project.findOne({ roomId });
@@ -60,13 +77,11 @@ app.post("/api/create-room", async (req, res) => {
   }
 });
 
-
-// Save project
+// Save Project
 app.post("/api/save", optionallyVerifyToken, async (req, res) => {
   const { roomId, files, structure, title } = req.body;
-  if (!roomId || !files || !structure) {
+  if (!roomId || !files || !structure)
     return res.status(400).json({ error: "Missing fields" });
-  }
 
   try {
     const project = await Project.findOneAndUpdate(
@@ -93,7 +108,7 @@ app.post("/api/save", optionallyVerifyToken, async (req, res) => {
   }
 });
 
-// Load project
+// Load Project
 app.get("/api/room/:roomId", optionallyVerifyToken, async (req, res) => {
   try {
     const project = await Project.findOne({ roomId: req.params.roomId });
@@ -112,7 +127,7 @@ app.get("/api/room/:roomId", optionallyVerifyToken, async (req, res) => {
   }
 });
 
-// Download project as ZIP
+// Download as ZIP
 app.get("/api/download/:roomId", async (req, res) => {
   try {
     const project = await Project.findOne({ roomId: req.params.roomId });
@@ -146,7 +161,7 @@ app.get("/api/download/:roomId", async (req, res) => {
   }
 });
 
-// Get rooms created/visited by authenticated user
+// Get User Rooms
 app.get("/api/my-rooms", optionallyVerifyToken, async (req, res) => {
   if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 
@@ -166,19 +181,18 @@ app.get("/api/my-rooms", optionallyVerifyToken, async (req, res) => {
   }
 });
 
+// Get Authenticated User Info
 app.get("/api/me", authenticateJWT, (req, res) => {
-
   res.json({ username: req.user.username, email: req.user.email });
 });
 
-
-// Socket.io handling
+// Socket.io Handling
 io.on("connection", (socket) => {
   console.log("⚡ User connected:", socket.id);
   codeSocket(socket, io);
 });
 
-// Default health check
+// Default Health Check
 app.get("/", (req, res) => res.send("🚀 Server running"));
 
 const PORT = process.env.PORT || 5000;
