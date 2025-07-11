@@ -102,6 +102,7 @@ export function broadcastStructure({
     roomId,
     structure: projectstructure,
     files: fileContent,
+    sender: socket.id, // ✅ Add this line
   });
 
   console.log("📤 Structure broadcasted to room:", roomId);

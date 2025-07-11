@@ -16,11 +16,9 @@ export default function useEditorSync({
   setTitle,
 }) {
   const preventEmitRef = useRef(false);
-  const preventStructureEmitRef = useRef(false);
   const lastSavedRef = useRef(Date.now());
   const isInitialMountRef = useRef(true);
 
-  // 👇 Dynamic backend URL
   const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
   // Load from socket or fallback DB
@@ -70,13 +68,13 @@ export default function useEditorSync({
     const socket = socketRef?.current;
     if (!socket) return;
 
-    const handleStructureUpdate = ({ structure, files }) => {
-      if (preventStructureEmitRef.current) {
+    const handleStructureUpdate = ({ structure, files, sender }) => {
+      if (sender === socket.id) {
         console.log("📥 Ignored own structure update");
         return;
       }
 
-      console.log("📥 Received structure update");
+      console.log("📥 Received structure update from another user");
       setFileContent(files || {});
       setProjectStructure(structure || { type: "folder", name: "root", children: [] });
     };
@@ -140,7 +138,7 @@ export default function useEditorSync({
     return () => clearTimeout(timeout);
   }, [fileContent, projectstructure, title, hasLoadedFiles]);
 
-  // Broadcast structure
+  // Broadcast structure (with sender ID)
   useEffect(() => {
     const socket = socketRef?.current;
     if (!socket || !hasLoadedFiles) return;
@@ -149,13 +147,12 @@ export default function useEditorSync({
       return;
     }
 
-    preventStructureEmitRef.current = true;
     socket.emit("structure-update", {
       roomId,
       structure: projectstructure,
       files: fileContent,
+      sender: socket.id, // ✅ send sender ID
     });
-    setTimeout(() => (preventStructureEmitRef.current = false), 50);
   }, [projectstructure, hasLoadedFiles]);
 
   // Active users update
