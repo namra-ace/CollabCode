@@ -18,6 +18,7 @@ export default function useEditorSync({
   const preventEmitRef = useRef(false);
   const lastSavedRef = useRef(Date.now());
   const isInitialMountRef = useRef(true);
+  const lastStructureSenderRef = useRef(null); // ✅ Track sender to prevent rebroadcast
 
   const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
@@ -74,7 +75,9 @@ export default function useEditorSync({
         return;
       }
 
-      console.log("📥 Received structure update from another user");
+      console.log("📥 Received structure update from:", sender);
+      lastStructureSenderRef.current = sender;
+
       setFileContent(files || {});
       setProjectStructure(structure || { type: "folder", name: "root", children: [] });
     };
@@ -138,12 +141,19 @@ export default function useEditorSync({
     return () => clearTimeout(timeout);
   }, [fileContent, projectstructure, title, hasLoadedFiles]);
 
-  // Broadcast structure (with sender ID)
+  // Broadcast structure (only if not just received)
   useEffect(() => {
     const socket = socketRef?.current;
     if (!socket || !hasLoadedFiles) return;
+
     if (isInitialMountRef.current) {
       isInitialMountRef.current = false;
+      return;
+    }
+
+    if (lastStructureSenderRef.current) {
+      console.log("⛔ Skipping structure broadcast - just received");
+      lastStructureSenderRef.current = null;
       return;
     }
 
@@ -151,8 +161,9 @@ export default function useEditorSync({
       roomId,
       structure: projectstructure,
       files: fileContent,
-      sender: socket.id, // ✅ send sender ID
+      sender: socket.id,
     });
+    console.log("📤 Emitted structure update");
   }, [projectstructure, hasLoadedFiles]);
 
   // Active users update
