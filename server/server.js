@@ -113,6 +113,26 @@ app.post("/api/save", optionallyVerifyToken, async (req, res) => {
   }
 });
 
+//Delete room for user
+app.delete("/api/my-rooms/:roomId", authenticateJWT, async (req, res) => {
+  const userId = req.user.id;
+  const { roomId } = req.params;
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    user.visitedRooms = user.visitedRooms.filter((id) => id !== roomId);
+    await user.save();
+
+    res.json({ message: "Room removed from visited list" });
+  } catch (err) {
+    console.error("❌ Delete visited room error:", err);
+    res.status(500).json({ error: "Failed to remove room" });
+  }
+});
+
+
 // Load Project
 app.get("/api/room/:roomId", optionallyVerifyToken, async (req, res) => {
   try {

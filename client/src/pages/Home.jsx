@@ -67,6 +67,26 @@ function Home() {
     if (roomId.trim()) navigate(`/room/${roomId}`);
   };
 
+  const handleDeleteRoom = async (roomIdToDelete) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/my-rooms/${roomIdToDelete}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setVisitedRooms((prev) =>
+          prev.filter((room) => room.roomId !== roomIdToDelete)
+        );
+      } else {
+        const data = await res.json();
+        alert(`❌ Failed to remove room: ${data.error}`);
+      }
+    } catch (err) {
+      alert("🚨 Couldn't remove room. Try again.");
+      console.error(err.message);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-black to-gray-900 text-white font-sans">
       <div className="flex-grow px-4 py-10 max-w-6xl mx-auto w-full">
@@ -146,24 +166,41 @@ function Home() {
                     animate={{ opacity: 1, y: 0 }}
                     whileHover={{ scale: 1.03 }}
                     transition={{ delay: idx * 0.05 }}
-                    onClick={() => navigate(`/room/${room.roomId}`)}
-                    className="cursor-pointer p-5 backdrop-blur-md bg-white/10 border border-white/20 rounded-xl shadow-lg hover:shadow-2xl transition duration-300"
+                    className="relative p-5 backdrop-blur-md bg-white/10 border border-white/20 rounded-xl shadow-lg hover:shadow-2xl transition duration-300"
                   >
-                    <div className="flex items-center gap-2 mb-2">
-                      <Code2 size={20} className="text-cyan-300" />
-                      <h3 className="text-lg font-semibold text-cyan-300 truncate">
-                        {room.title || room.roomId}
-                      </h3>
+                    <div
+                      onClick={() => navigate(`/room/${room.roomId}`)}
+                      className="cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <Code2 size={20} className="text-cyan-300" />
+                        <h3 className="text-lg font-semibold text-cyan-300 truncate">
+                          {room.title || room.roomId}
+                        </h3>
+                      </div>
+                      {room.title && (
+                        <p className="text-sm text-gray-300 truncate">
+                          ID: {room.roomId}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-1 mt-2 text-gray-400 text-xs">
+                        <Clock size={14} />
+                        <span>
+                          {new Date(room.createdAt).toLocaleString()}
+                        </span>
+                      </div>
                     </div>
-                    {room.title && (
-                      <p className="text-sm text-gray-300 truncate">
-                        ID: {room.roomId}
-                      </p>
-                    )}
-                    <div className="flex items-center gap-1 mt-2 text-gray-400 text-xs">
-                      <Clock size={14} />
-                      <span>{new Date(room.createdAt).toLocaleString()}</span>
-                    </div>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteRoom(room.roomId);
+                      }}
+                      title="Remove from history"
+                      className="absolute top-2 right-2 text-red-400 hover:text-red-600"
+                    >
+                      ✖
+                    </button>
                   </motion.div>
                 ))}
               </div>
