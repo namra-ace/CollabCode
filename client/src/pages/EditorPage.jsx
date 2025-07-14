@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { FaHome, FaSave, FaDownload } from "react-icons/fa";
+import { FaHome, FaSave, FaDownload, FaCopy } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 
@@ -205,21 +205,21 @@ function EditorPage() {
               <FaSave />
             </button>
             <button
-  onClick={() => {
-    if (roomId) {
-      navigator.clipboard
-        .writeText(roomId)
-        .then(() => toast.success(`📋 Room ID "${roomId}" copied!`))
-        .catch(() => toast.error("❌ Failed to copy Room ID"));
-    } else {
-      toast.error("⚠️ No Room ID found");
-    }
-  }}
-  className="bg-purple-600 hover:bg-purple-700 p-2 rounded-lg shadow-sm text-white"
-  title={`Copy Room ID: ${roomId}`}
->
-  📎
-</button>
+              onClick={() => {
+                if (roomId) {
+                  navigator.clipboard
+                    .writeText(roomId)
+                    .then(() => toast.success(`📋 Room ID "${roomId}" copied!`))
+                    .catch(() => toast.error("❌ Failed to copy Room ID"));
+                } else {
+                  toast.error("⚠️ No Room ID found");
+                }
+              }}
+              className="bg-purple-600 hover:bg-purple-700 p-2 rounded-lg shadow-sm text-white"
+              title={`Copy Room ID: ${roomId}`}
+            >
+              <FaCopy />
+            </button>
 
             <button
               onClick={() =>
