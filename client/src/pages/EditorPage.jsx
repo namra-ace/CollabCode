@@ -205,6 +205,23 @@ function EditorPage() {
               <FaSave />
             </button>
             <button
+  onClick={() => {
+    if (roomId) {
+      navigator.clipboard
+        .writeText(roomId)
+        .then(() => toast.success(`📋 Room ID "${roomId}" copied!`))
+        .catch(() => toast.error("❌ Failed to copy Room ID"));
+    } else {
+      toast.error("⚠️ No Room ID found");
+    }
+  }}
+  className="bg-purple-600 hover:bg-purple-700 p-2 rounded-lg shadow-sm text-white"
+  title={`Copy Room ID: ${roomId}`}
+>
+  📎
+</button>
+
+            <button
               onClick={() =>
                 roomId &&
                 window.open(`${BACKEND_URL}/api/download/${roomId}`, "_blank")
