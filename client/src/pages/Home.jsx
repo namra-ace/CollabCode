@@ -8,7 +8,7 @@ import {
   animals,
 } from "unique-names-generator";
 import { motion } from "framer-motion";
-import { Sparkles, Code2, Clock } from "lucide-react";
+import { Code2, Clock } from "lucide-react";
 
 // ✅ Environment-based backend URL
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
@@ -68,8 +68,8 @@ function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black to-gray-900 text-white font-sans px-4 py-10">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen flex flex-col bg-gradient-to-b from-black to-gray-900 text-white font-sans">
+      <div className="flex-grow px-4 py-10 max-w-6xl mx-auto w-full">
         <header className="flex justify-between items-center mb-12">
           <h1 className="text-3xl font-bold text-cyan-400">🚀 CodeSync</h1>
           <div className="space-x-4">
@@ -171,9 +171,10 @@ function Home() {
           </section>
         )}
       </div>
-      <footer className="mt-16 text-center text-gray-500 text-sm">
-        <hr className="border-gray-700 mb-4" />
-        <p>🚀 Made with ❤️ by <span className="text-cyan-400 font-medium">Namra</span></p>
+
+      <footer className="text-center text-gray-500 text-sm py-4 border-t border-gray-800">
+        🚀 Made with ❤️ by{" "}
+        <span className="text-cyan-400 font-medium">Namra</span>
       </footer>
     </div>
   );
