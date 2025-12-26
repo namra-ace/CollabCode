@@ -6,10 +6,14 @@ const cors = require("cors");
 const archiver = require("archiver");
 const mongoose = require("mongoose");
 
+// ✅ FIX: Import WebSocketServer from 'ws' and our custom utils
+const { WebSocketServer } = require("ws");
+const { setupWSConnection } = require("./yjsUtils");
+
 const codeSocket = require("./sockets/codeSocket");
 const authRoutes = require("./routes/authRoutes");
 const optionallyVerifyToken = require("./middleware/optionallyVerifyToken");
-const authenticateJWT = require('./middleware/authenticateJWT');
+const authenticateJWT = require("./middleware/authenticateJWT");
 
 const Project = require("./models/Project");
 const User = require("./models/User");
@@ -22,25 +26,16 @@ const allowedOrigins = [
   process.env.FRONTEND_URL
 ];
 
-// Middleware: JSON and CORS
+// -------------------- Middleware --------------------
 app.use(express.json());
 app.use(cors({
-  origin: [process.env.FRONTEND_URL, "http://localhost:5173"],
+  origin: allowedOrigins,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true
 }));
 
-
-app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "https://codesync-ten-mu.vercel.app");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  next();
-});
-
-
-// Socket.io
+// -------------------- Socket.IO --------------------
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
@@ -49,12 +44,31 @@ const io = new Server(server, {
   }
 });
 
-// MongoDB Connection
+// -------------------- Yjs WebSocket Server --------------------
+// ✅ FIX: Create a headless WebSocket server
+const wss = new WebSocketServer({ noServer: true });
+
+// ✅ FIX: Handle Upgrade manually
+server.on("upgrade", (request, socket, head) => {
+  if (request.url.startsWith("/yjs")) {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit("connection", ws, request);
+    });
+  }
+});
+
+// ✅ FIX: Handle Connection using our custom utils
+wss.on("connection", (ws, req) => {
+  const docName = req.url.substring(1); // remove leading slash
+  setupWSConnection(ws, req, { docName });
+});
+
+// -------------------- MongoDB --------------------
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ Database connected"))
   .catch(err => console.error("❌ Database connection error:", err));
 
-// Routes
+// -------------------- Routes --------------------
 app.use("/api/auth", authRoutes);
 
 // Create Room
@@ -89,7 +103,7 @@ app.post("/api/save", optionallyVerifyToken, async (req, res) => {
     return res.status(400).json({ error: "Missing fields" });
 
   try {
-    const project = await Project.findOneAndUpdate(
+    await Project.findOneAndUpdate(
       { roomId },
       {
         files,
@@ -113,25 +127,21 @@ app.post("/api/save", optionallyVerifyToken, async (req, res) => {
   }
 });
 
-//Delete room for user
+// Delete room for user
 app.delete("/api/my-rooms/:roomId", authenticateJWT, async (req, res) => {
-  const userId = req.user.id;
-  const { roomId } = req.params;
-
   try {
-    const user = await User.findById(userId);
+    const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    user.visitedRooms = user.visitedRooms.filter((id) => id !== roomId);
+    user.visitedRooms = user.visitedRooms.filter(id => id !== req.params.roomId);
     await user.save();
 
     res.json({ message: "Room removed from visited list" });
   } catch (err) {
-    console.error("❌ Delete visited room error:", err);
+    console.error("Delete room error:", err);
     res.status(500).json({ error: "Failed to remove room" });
   }
 });
-
 
 // Load Project
 app.get("/api/room/:roomId", optionallyVerifyToken, async (req, res) => {
@@ -152,7 +162,7 @@ app.get("/api/room/:roomId", optionallyVerifyToken, async (req, res) => {
   }
 });
 
-// Download as ZIP
+// Download ZIP
 app.get("/api/download/:roomId", async (req, res) => {
   try {
     const project = await Project.findOne({ roomId: req.params.roomId });
@@ -166,14 +176,13 @@ app.get("/api/download/:roomId", async (req, res) => {
     const archive = archiver("zip", { zlib: { level: 9 } });
     archive.pipe(res);
 
-    const addFiles = (structure, basePath = "") => {
-      for (const node of structure) {
-        const fullPath = basePath ? `${basePath}/${node.name}` : node.name;
+    const addFiles = (nodes, base = "") => {
+      for (const node of nodes) {
+        const path = base ? `${base}/${node.name}` : node.name;
         if (node.type === "file") {
-          const content = project.files[fullPath] || "";
-          archive.append(content, { name: fullPath });
-        } else if (node.type === "folder") {
-          addFiles(node.children, fullPath);
+          archive.append(project.files[path] || "", { name: path });
+        } else {
+          addFiles(node.children, path);
         }
       }
     };
@@ -192,33 +201,32 @@ app.get("/api/my-rooms", optionallyVerifyToken, async (req, res) => {
 
   try {
     const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ error: "User not found" });
-
     const rooms = await Project.find(
       { roomId: { $in: user.visitedRooms } },
       "roomId createdAt title"
     );
-
     res.json(rooms);
   } catch (err) {
-    console.error("Fetch my rooms error:", err);
+    console.error("Fetch rooms error:", err);
     res.status(500).json({ error: "Failed to fetch rooms" });
   }
 });
 
-// Get Authenticated User Info
+// Me
 app.get("/api/me", authenticateJWT, (req, res) => {
   res.json({ username: req.user.username, email: req.user.email });
 });
 
-// Socket.io Handling
+// -------------------- Socket.IO --------------------
 io.on("connection", (socket) => {
   console.log("⚡ User connected:", socket.id);
   codeSocket(socket, io);
 });
 
-// Default Health Check
-app.get("/", (req, res) => res.send("🚀 Server running"));
+// Health
+app.get("/", (_, res) => res.send("🚀 Server running"));
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => console.log(`🚀 Server listening on port ${PORT}`));
+server.listen(PORT, () =>
+  console.log(`🚀 Server listening on port ${PORT}`)
+);

@@ -9,6 +9,7 @@ import Spinner from "../components/Spinner";
 import ProjectSidebar from "../components/ProjectSidebar";
 import useSocket from "../hooks/useSocket";
 import useEditorSync from "../hooks/useEditorSync";
+import { useYjs } from "../hooks/useYjs"; // ✅ New Import
 import { useAuth } from "../context/AuthContext";
 
 import {
@@ -22,7 +23,6 @@ import {
   handleAddNode,
 } from "./EditorPageParts/structureOperations";
 
-// ✅ Backend URL that works for both localhost and deployed (Render)
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
 function EditorPage() {
@@ -43,6 +43,9 @@ function EditorPage() {
   const [activeFile, setActiveFile] = useState(null);
   const [hasLoadedFiles, setHasLoadedFiles] = useState(false);
   const [openTabs, setOpenTabs] = useState([]);
+
+  // ✅ Initialize Yjs Hook
+  const { provider, yDoc } = useYjs(roomId, activeFile);
 
   const handleSave = async () => {
     if (!roomId) return toast.error("No room ID");
@@ -242,11 +245,10 @@ function EditorPage() {
                 layout
                 initial={{ opacity: 0.6, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className={`flex items-center px-4 py-1 rounded-t-md cursor-pointer transition-colors whitespace-nowrap font-mono text-sm ${
-                  isActive
+                className={`flex items-center px-4 py-1 rounded-t-md cursor-pointer transition-colors whitespace-nowrap font-mono text-sm ${isActive
                     ? "bg-gray-700 text-white font-bold"
                     : "bg-gray-800 text-gray-300 hover:bg-gray-700"
-                }`}
+                  }`}
                 onClick={() => setActiveFile(file)}
               >
                 <span title={file}>{file.split("/").pop()}</span>
@@ -277,9 +279,13 @@ function EditorPage() {
                 transition={{ duration: 0.2 }}
                 className="h-full"
               >
+                {/* ✅ Updated CodeEditor props */}
                 <CodeEditor
                   key={activeFile}
-                  code={fileContent[activeFile]}
+                  activeFile={activeFile}
+                  initialContent={fileContent[activeFile] || ""} // ✅ Pass DB content here
+                  yProvider={provider}
+                  yDoc={yDoc}
                   onCodeChange={(newCode) =>
                     setFileContent((prev) => ({
                       ...prev,
@@ -318,11 +324,10 @@ function EditorPage() {
                 return (
                   <span
                     key={u.id || i}
-                    className={`px-2 py-1 rounded-full font-medium ${
-                      isSelf
+                    className={`px-2 py-1 rounded-full font-medium ${isSelf
                         ? "bg-green-600 text-white"
                         : "bg-gray-700 text-gray-300"
-                    }`}
+                      }`}
                   >
                     {u.username || "Guest"} {isSelf && "(You)"}
                   </span>
