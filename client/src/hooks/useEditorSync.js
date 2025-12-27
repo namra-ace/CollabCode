@@ -15,14 +15,13 @@ export default function useEditorSync({
   title,
   setTitle,
 }) {
-  const preventEmitRef = useRef(false);
   const lastSavedRef = useRef(Date.now());
   const isInitialMountRef = useRef(true);
-  const lastStructureSenderRef = useRef(null); // ✅ Track sender to prevent rebroadcast
+  const lastStructureSenderRef = useRef(null);
 
   const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
-  // Load from socket or fallback DB
+  // 1. Load from socket or fallback DB
   useEffect(() => {
     const socket = socketRef?.current;
     if (!socket || !roomId) return;
@@ -64,18 +63,15 @@ export default function useEditorSync({
     };
   }, [roomId, hasLoadedFiles]);
 
-  // Incoming structure updates
+  // 2. Incoming structure updates (File Tree)
   useEffect(() => {
     const socket = socketRef?.current;
     if (!socket) return;
 
     const handleStructureUpdate = ({ structure, files, sender }) => {
       if (sender === socket.id) {
-        console.log("📥 Ignored own structure update");
         return;
       }
-
-      console.log("📥 Received structure update from:", sender);
       lastStructureSenderRef.current = sender;
 
       setFileContent(files || {});
@@ -86,38 +82,7 @@ export default function useEditorSync({
     return () => socket.off("structure-update", handleStructureUpdate);
   }, []);
 
-  // Incoming code changes
-  useEffect(() => {
-    const socket = socketRef?.current;
-    if (!socket) return;
-
-    const handleCodeChange = ({ filePath, code }) => {
-      preventEmitRef.current = true;
-      setFileContent((prev) => ({ ...prev, [filePath]: code }));
-      setTimeout(() => (preventEmitRef.current = false), 50);
-    };
-
-    socket.on("code-change", handleCodeChange);
-    return () => socket.off("code-change", handleCodeChange);
-  }, []);
-
-  // Emit code changes
-  useEffect(() => {
-    if (!activeFile || !hasLoadedFiles) return;
-    const socket = socketRef?.current;
-    if (!socket || preventEmitRef.current) return;
-
-    const code = fileContent?.[activeFile];
-    if (code === undefined) return;
-
-    socket.emit("code-change", {
-      roomId,
-      filePath: activeFile,
-      code,
-    });
-  }, [activeFile, fileContent, roomId, hasLoadedFiles]);
-
-  // Auto-save to DB every 3s
+  // 3. Auto-save to DB every 3s
   useEffect(() => {
     if (!hasLoadedFiles) return;
     const now = Date.now();
@@ -141,7 +106,7 @@ export default function useEditorSync({
     return () => clearTimeout(timeout);
   }, [fileContent, projectstructure, title, hasLoadedFiles]);
 
-  // Broadcast structure (only if not just received)
+  // 4. Broadcast structure changes (File Tree)
   useEffect(() => {
     const socket = socketRef?.current;
     if (!socket || !hasLoadedFiles) return;
@@ -152,7 +117,6 @@ export default function useEditorSync({
     }
 
     if (lastStructureSenderRef.current) {
-      console.log("⛔ Skipping structure broadcast - just received");
       lastStructureSenderRef.current = null;
       return;
     }
@@ -163,10 +127,9 @@ export default function useEditorSync({
       files: fileContent,
       sender: socket.id,
     });
-    console.log("📤 Emitted structure update");
   }, [projectstructure, hasLoadedFiles]);
 
-  // Active users update
+  // 5. Active users update
   useEffect(() => {
     const socket = socketRef?.current;
     if (!socket || !roomId) return;

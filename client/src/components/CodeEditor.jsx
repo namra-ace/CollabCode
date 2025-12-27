@@ -19,11 +19,12 @@ function CodeEditor({ initialContent, activeFile, onCodeChange, language, yProvi
   };
 
   useEffect(() => {
-    if (!editorRef || !yProvider || !yDoc) return;
+    if (!editorRef || !yProvider || !yDoc || !activeFile) return;
 
-    const yText = yDoc.getText("monaco");
+    // ✅ FIX: Use a unique Yjs text type for EACH file based on its path
+    const yText = yDoc.getText(activeFile);
 
-    // ✅ FIX: If Yjs doc is empty (new session), load content from DB
+    // If Yjs doc is empty (new session), load content from DB
     if (yText.toString() === "" && initialContent) {
       yText.insert(0, initialContent);
     }
@@ -51,7 +52,7 @@ function CodeEditor({ initialContent, activeFile, onCodeChange, language, yProvi
       binding.destroy();
       bindingRef.current = null;
     };
-  }, [editorRef, yProvider, yDoc, activeFile]); 
+  }, [editorRef, yProvider, yDoc, activeFile]); // Re-run when activeFile changes
 
   return (
     <div className="w-full h-full border border-gray-700 rounded-md overflow-hidden shadow-md">

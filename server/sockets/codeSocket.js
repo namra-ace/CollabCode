@@ -49,12 +49,12 @@ module.exports = (socket, io) => {
     io.to(to).emit("load-all-files", { files, structure });
   });
 
-  socket.on("code-change", ({ roomId, filePath, code }) => {
-    if (!roomFileMap[roomId])
-      roomFileMap[roomId] = { files: {}, structure: {} };
-    roomFileMap[roomId].files[filePath] = code;
-    socket.to(roomId).emit("code-change", { filePath, code });
-  });
+  // socket.on("code-change", ({ roomId, filePath, code }) => {
+  //   if (!roomFileMap[roomId])
+  //     roomFileMap[roomId] = { files: {}, structure: {} };
+  //   roomFileMap[roomId].files[filePath] = code;
+  //   socket.to(roomId).emit("code-change", { filePath, code });
+  // });
 
   // ✅ Fixed: Include sender in structure-update
   socket.on("structure-update", ({ roomId, structure, files, sender }) => {
