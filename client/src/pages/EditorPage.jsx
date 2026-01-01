@@ -4,24 +4,24 @@ import { FaHome, FaSave, FaDownload, FaCopy } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 
-import CodeEditor from "../components/CodeEditor";
-import Spinner from "../components/Spinner";
-import ProjectSidebar from "../components/ProjectSidebar";
+import CodeEditor from "../components/editor/CodeEditor";
+import Spinner from "../components/common/Spinner";
+import ProjectSidebar from "../components/sidebar/ProjectSidebar";
 import useSocket from "../hooks/useSocket";
 import useEditorSync from "../hooks/useEditorSync";
-import { useYjs } from "../hooks/useYjs"; // ✅ New Import
+import { useYjs } from "../hooks/useYjs";
 import { useAuth } from "../context/AuthContext";
 
 import {
   handleFileClick,
   handleDeleteNode,
   handleRenameNode,
-} from "./EditorPageParts/FileOperations";
+} from "../utils/fileTree/FileOperations";
 
 import {
   getLanguageFromExtension,
   handleAddNode,
-} from "./EditorPageParts/structureOperations";
+} from "../utils/fileTree/structureOperations";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
