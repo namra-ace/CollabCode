@@ -1,8 +1,8 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 
-export const useYjs = (roomId, activeFile) => {
+export const useYjs = (roomId, activeFile, { token } = {}) => {
   const [provider, setProvider] = useState(null);
   const [yDoc, setYDoc] = useState(null);
 
@@ -10,21 +10,22 @@ export const useYjs = (roomId, activeFile) => {
     if (!roomId || !activeFile) return;
 
     const docId = `${roomId}-${activeFile}`;
-
-    // 1. Create the Yjs Doc
     const doc = new Y.Doc();
 
-    // 2. Connect to the WebSocket Server
-    // We point to the same host/port as your backend, but with 'ws://'
-    // The path '/yjs/' matches the upgrade logic we added to server.js
-    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
-    const wsUrl = backendUrl.replace(/^http/, 'ws') + `/yjs/${docId}`;
+    const wsBaseUrl = backendUrl.replace(/^http/, 'ws') + '/yjs';
+    
+    const params = new URLSearchParams();
+    params.append("roomId", roomId);
+    if (token) params.append("token", token);
+    
+    // Trick: Append params to the Room Name
+    const roomNameWithParams = `${docId}?${params.toString()}`;
 
     const wsProvider = new WebsocketProvider(
-      wsUrl, // The URL string directly (y-websocket constructs the rest)
-      docId, // The room name
-      doc,   // The doc instance
+      wsBaseUrl, 
+      roomNameWithParams, 
+      doc,   
       { connect: true }
     );
 
@@ -35,7 +36,7 @@ export const useYjs = (roomId, activeFile) => {
       wsProvider.destroy();
       doc.destroy();
     };
-  }, [roomId, activeFile]);
+  }, [roomId, activeFile, token]);
 
   return { provider, yDoc };
 };

@@ -15,6 +15,7 @@ const docs = new Map();
 
 const messageSync = 0;
 const messageAwareness = 1;
+const messageYjsUpdate = 2; // Yjs Update Message Type
 
 const updateHandler = (update, origin, doc) => {
   const encoder = encoding.createEncoder();
@@ -61,13 +62,26 @@ const getYDoc = (docname, gc = true) => map.setIfUndefined(docs, docname, () => 
   return doc;
 });
 
-const messageListener = (conn, doc, message) => {
+const messageListener = (conn, doc, message, readOnly) => {
   try {
     const encoder = encoding.createEncoder();
     const decoder = decoding.createDecoder(message);
     const messageType = decoding.readVarUint(decoder);
+    
     switch (messageType) {
       case messageSync:
+        if (readOnly) {
+           // Create a temporary decoder to peek at the Sync Message Type
+           const peekDecoder = decoding.createDecoder(message);
+           decoding.readVarUint(peekDecoder); // Skip outer 'messageSync' type
+           const syncMessageType = decoding.readVarUint(peekDecoder);
+
+           // If inner message is UPDATE (2), block it.
+           if (syncMessageType === messageYjsUpdate) {
+             return; 
+           }
+        }
+
         encoding.writeVarUint(encoder, messageSync);
         syncProtocol.readSyncMessage(decoder, encoder, doc, null);
         if (encoding.length(encoder) > 1) {
@@ -108,12 +122,12 @@ const send = (doc, conn, m) => {
   }
 };
 
-const setupWSConnection = (conn, req, { docName = req.url.slice(1).split('?')[0], gc = true } = {}) => {
+const setupWSConnection = (conn, req, { docName = req.url.slice(1).split('?')[0], gc = true, readOnly = false } = {}) => {
   conn.binaryType = 'arraybuffer';
   const doc = getYDoc(docName, gc);
   doc.conns.set(conn, new Set());
 
-  conn.on('message', message => messageListener(conn, doc, new Uint8Array(message)));
+  conn.on('message', message => messageListener(conn, doc, new Uint8Array(message), readOnly));
 
   let pongReceived = true;
   const pingInterval = setInterval(() => {

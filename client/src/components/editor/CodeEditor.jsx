@@ -10,29 +10,33 @@ loader.init().then((monaco) => {
   monaco.languages.register({ id: "html" });
 });
 
-function CodeEditor({ initialContent, activeFile, onCodeChange, language, yProvider, yDoc, theme = "vs-dark" }) {
+function CodeEditor({ 
+  initialContent, 
+  activeFile, 
+  onCodeChange, 
+  language, 
+  yProvider, 
+  yDoc, 
+  theme = "vs-dark" 
+}) {
   const [editorRef, setEditorRef] = useState(null);
   const bindingRef = useRef(null);
 
-  const handleEditorDidMount = (editor, monaco) => {
+  const handleEditorDidMount = (editor) => {
     setEditorRef(editor);
   };
 
   useEffect(() => {
     if (!editorRef || !yProvider || !yDoc || !activeFile) return;
 
-    // ✅ FIX: Use a unique Yjs text type for EACH file based on its path
     const yText = yDoc.getText(activeFile);
 
-    // If Yjs doc is empty (new session), load content from DB
-    if (yText.toString() === "" && initialContent) {
-      yText.insert(0, initialContent);
-    }
+    // 1. Pre-fill view to avoid empty editor flash
+    editorRef.setValue(yText.toString());
 
-    // Clean up old binding
+    // 2. Bind Yjs to Monaco
     if (bindingRef.current) bindingRef.current.destroy();
 
-    // Bind Yjs to Monaco
     const binding = new MonacoBinding(
       yText,
       editorRef.getModel(),
@@ -41,27 +45,41 @@ function CodeEditor({ initialContent, activeFile, onCodeChange, language, yProvi
     );
     bindingRef.current = binding;
 
-    // Sync back to React state for "Save" button
-    const updateListener = () => {
-      onCodeChange(yText.toString());
+    // 3. Seed content from DB if room is empty
+    const handleSync = () => {
+      if (yText.toString() === "") {
+        if (initialContent) {
+           yText.insert(0, initialContent);
+        }
+      }
     };
-    yText.observe(updateListener);
+
+    if (yProvider.synced) {
+      handleSync();
+    } else {
+      yProvider.once("synced", handleSync);
+    }
 
     return () => {
-      yText.unobserve(updateListener);
       binding.destroy();
       bindingRef.current = null;
     };
-  }, [editorRef, yProvider, yDoc, activeFile]); // Re-run when activeFile changes
+  }, [editorRef, yProvider, yDoc, activeFile]);
+
+  const handleEditorChange = (value) => {
+    if (onCodeChange) {
+      onCodeChange(value || "");
+    }
+  };
 
   return (
-    <div className="w-full h-full border border-gray-700 rounded-md overflow-hidden shadow-md">
+    <div className="w-full h-full border border-gray-700 rounded-md overflow-hidden shadow-md relative">
       <Editor
         height="100%"
         language={language}
         theme={theme}
-        defaultValue="" // Let Yjs handle the value
         onMount={handleEditorDidMount}
+        onChange={handleEditorChange} 
         options={{
           fontSize: 16,
           fontLigatures: true,
@@ -69,6 +87,7 @@ function CodeEditor({ initialContent, activeFile, onCodeChange, language, yProvi
           minimap: { enabled: false },
           wordWrap: "on",
           padding: { top: 12 },
+          automaticLayout: true,
         }}
       />
     </div>

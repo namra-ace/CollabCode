@@ -8,6 +8,9 @@ const ProjectSchema = new mongoose.Schema(
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     createdAt: { type: Date, default: Date.now},
     title: { type: String, default: "" },
+    passcode: { type: String, required: true },
+    // ✅ NEW: Store IDs of users who have edit access
+    editors: [{ type: mongoose.Schema.Types.ObjectId, ref: "User", default: [] }], 
   },
   { timestamps: true }
 );

@@ -1,6 +1,7 @@
-import React, { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useState, useEffect } from "react";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
+import { motion } from "framer-motion";
+import toast from "react-hot-toast"; // ✅ Import toast hook only
 
 import Spinner from "../components/common/Spinner";
 import ProjectSidebar from "../components/sidebar/ProjectSidebar";
@@ -29,9 +30,57 @@ import {
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
 function EditorPage() {
-  const { token } = useAuth();
+  const { token, isAuthenticated, loading: authLoading } = useAuth();
   const { roomId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [canConnect, setCanConnect] = useState(false);
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    const verifyAccess = async () => {
+      const passcode = location.state?.passcode;
+
+      if (!passcode) {
+        if (isAuthenticated && !token) return;
+        setCanConnect(true);
+        return;
+      }
+
+      setIsVerifying(true);
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/verify-passcode`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ roomId, passcode }),
+        });
+
+        const data = await res.json();
+        
+        if (res.ok) {
+          toast.success("Access Granted");
+        } else {
+          toast.error(data.error || "Access Denied");
+          // Slight delay before kicking them out so they can read the toast
+          setTimeout(() => navigate("/"), 2000);
+        }
+      } catch (err) {
+        console.error("Verification error:", err);
+        toast.error("Network Error: Could not verify access");
+      } finally {
+        setIsVerifying(false);
+        setCanConnect(true);
+      }
+    };
+
+    verifyAccess();
+  }, [roomId, token, location.state, authLoading, isAuthenticated, navigate]);
 
   const {
     activeUsers,
@@ -61,8 +110,10 @@ function EditorPage() {
     hasLoadedFiles,
   });
 
+  const effectiveRoomId = canConnect ? roomId : null;
+
   const { provider, yDoc } = useEditorRealtime({
-    roomId,
+    roomId: effectiveRoomId,
     activeFile,
     fileContent,
     setFileContent,
@@ -73,20 +124,23 @@ function EditorPage() {
     setActiveUsers,
     title,
     setTitle,
+    token,
   });
 
-
-
-  if (!hasLoadedFiles) {
+  if (authLoading || isVerifying || !hasLoadedFiles) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-gray-950 text-white">
+      <div className="h-screen w-screen flex flex-col gap-4 items-center justify-center bg-gray-950 text-white">
         <Spinner />
+        {isVerifying && <p className="text-cyan-400 animate-pulse">Verifying Access...</p>}
+        {authLoading && <p className="text-gray-500">Authenticating...</p>}
       </div>
     );
   }
 
   return (
     <div className="h-screen w-screen flex bg-[#0a0a0a] text-white overflow-hidden">
+      {/* ❌ No <Toaster /> here, it is in main.jsx */}
+
       <motion.div
         initial={{ x: -50, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
@@ -156,7 +210,6 @@ function EditorPage() {
       </motion.div>
 
       <div className="flex-grow flex flex-col p-4">
-
         <EditorHeader
           title={title}
           setTitle={setTitle}
@@ -173,18 +226,18 @@ function EditorPage() {
           setOpenTabs={setOpenTabs}
         />
 
-        <EditorWorkspace
-          activeFile={activeFile}
-          fileContent={fileContent}
-          fileLanguage={fileLanguage}
-          provider={provider}
-          yDoc={yDoc}
-          setFileContent={setFileContent}
-        />
-
+        {provider && (
+          <EditorWorkspace
+            activeFile={activeFile}
+            fileContent={fileContent}
+            fileLanguage={fileLanguage}
+            provider={provider}
+            yDoc={yDoc}
+            setFileContent={setFileContent}
+          />
+        )}
 
         <EditorFooter activeUsers={activeUsers} />
-
       </div>
     </div>
   );

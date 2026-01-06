@@ -1,15 +1,14 @@
 const jwt = require("jsonwebtoken");
-const roomFileMap = {}; // roomId => { files, structure }
-const activeUsersMap = {}; // roomId => [{ id, username }]
+const roomFileMap = {}; 
+const activeUsersMap = {}; 
 const Project = require("../models/Project");
 
 module.exports = (socket, io) => {
   socket.on("join-room", async (roomId, user) => {
     try {
-      const roomExits = await Project.findOne({ roomId });
+      const project = await Project.findOne({ roomId });
 
-      if (!roomExits) {
-        console.warn(`Room ${roomId} does not exist`);
+      if (!project) {
         socket.emit("room-error", { message: "Room does not exist" });
         return;
       }
@@ -17,18 +16,40 @@ module.exports = (socket, io) => {
       socket.join(roomId);
 
       let username = "Guest";
+      let userId = null;
+      let hasWriteAccess = false;
+      let role = "Guest";
+
+      // 1. Verify Token
       if (user?.token) {
         try {
-          const decoded = jwt.verify(user.token, process.env.JWT_SECRET);
+          const cleanToken = user.token.replace("Bearer ", "").replace(/['"]+/g, '').trim();
+          
+          const decoded = jwt.verify(cleanToken, process.env.JWT_SECRET);
           username = decoded.username || "Guest";
+          userId = decoded.id;
         } catch (err) {
-          console.warn("Invalid token in join-room:", err.message);
+          // Token verification failed, treat as Guest
         }
       } else if (user?.username) {
         username = user.username;
       }
 
+      // 2. Check Permissions (Owner OR Editor in Array)
+      if (userId) {
+        const isOwner = project.createdBy && project.createdBy.toString() === userId;
+        const isEditor = project.editors.some(id => id.toString() === userId);
+
+        if (isOwner) role = "Owner";
+        else if (isEditor) role = "Editor";
+
+        if (isOwner || isEditor) {
+          hasWriteAccess = true;
+        }
+      }
+
       socket.data.username = username;
+      socket.data.hasWriteAccess = hasWriteAccess;
 
       if (!activeUsersMap[roomId]) activeUsersMap[roomId] = [];
       activeUsersMap[roomId].push({ id: socket.id, username });
@@ -49,15 +70,11 @@ module.exports = (socket, io) => {
     io.to(to).emit("load-all-files", { files, structure });
   });
 
-  // socket.on("code-change", ({ roomId, filePath, code }) => {
-  //   if (!roomFileMap[roomId])
-  //     roomFileMap[roomId] = { files: {}, structure: {} };
-  //   roomFileMap[roomId].files[filePath] = code;
-  //   socket.to(roomId).emit("code-change", { filePath, code });
-  // });
-
-  // ✅ Fixed: Include sender in structure-update
   socket.on("structure-update", ({ roomId, structure, files, sender }) => {
+    // RBAC CHECK: Block guests
+    if (!socket.data.hasWriteAccess) {
+      return;
+    }
     io.to(roomId).emit("structure-update", { structure, files, sender });
   });
 
@@ -68,6 +85,5 @@ module.exports = (socket, io) => {
       );
       io.to(roomId).emit("active-users-update", activeUsersMap[roomId]);
     }
-    console.log("User disconnected:", socket.id);
   });
 };

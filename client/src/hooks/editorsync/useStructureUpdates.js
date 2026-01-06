@@ -8,23 +8,24 @@ export function useStructureUpdates({
 }) {
   useEffect(() => {
     const socket = socketRef?.current;
+    
     if (!socket) return;
 
     const handleStructureUpdate = ({ structure, files, sender }) => {
-      // Ignore our own structure broadcasts to prevent feedback loops
-      if (sender === socket.id) {
-        return;
-      }
+      // Ignore our own structure broadcasts
+      if (sender === socket.id) return;
 
+      // Mark this update as "remote" so useBroadcastStructure doesn't echo it back
       lastRemoteStructureSenderRef.current = sender;
 
-      setFileContent(files || {});
-      setProjectStructure(
-        structure || { type: "folder", name: "root", children: [] }
-      );
+      if (files) setFileContent(files);
+      if (structure) setProjectStructure(structure);
     };
 
     socket.on("structure-update", handleStructureUpdate);
-    return () => socket.off("structure-update", handleStructureUpdate);
-  }, []);
+    
+    return () => {
+      socket.off("structure-update", handleStructureUpdate);
+    };
+  }, [socketRef.current]); 
 }

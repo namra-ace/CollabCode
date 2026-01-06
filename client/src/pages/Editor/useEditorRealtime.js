@@ -1,5 +1,5 @@
 import useSocket from "../../hooks/useSocket";
-import useEditorSync from "../../hooks/useEditorSync";
+import useEditorSync from "../../hooks/useEditorSync"; // Make sure path is correct
 import { useYjs } from "../../hooks/useYjs";
 
 export function useEditorRealtime({
@@ -14,10 +14,11 @@ export function useEditorRealtime({
   setActiveUsers,
   title,
   setTitle,
+  token, 
 }) {
-  const socketRef = useSocket(roomId);
+  const socketRef = useSocket(roomId, { token });
 
-  const { provider, yDoc } = useYjs(roomId, activeFile);
+  const { provider, yDoc } = useYjs(roomId, activeFile, { token });
 
   useEditorSync({
     roomId,
@@ -32,6 +33,7 @@ export function useEditorRealtime({
     setActiveUsers,
     title,
     setTitle,
+    token, // ✅ Pass Token here
   });
 
   return { socketRef, provider, yDoc };
