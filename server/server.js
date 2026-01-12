@@ -7,7 +7,7 @@ const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const { WebSocketServer } = require("ws");
 const { setupWSConnection } = require("./yjsUtils");
-
+const archiver = require("archiver");
 const codeSocket = require("./sockets/codeSocket");
 const authRoutes = require("./routes/authRoutes");
 const aiRoutes = require("./routes/aiRoutes"); 
@@ -249,34 +249,70 @@ app.delete("/api/my-rooms/:roomId", authenticateJWT, async (req, res) => {
 });
 
 // 7. Download Project
+// server/server.js
+
 app.get("/api/download/:roomId", async (req, res) => {
   try {
     const project = await Project.findOne({ roomId: req.params.roomId });
     if (!project) return res.status(404).send("Room not found");
 
     const archive = archiver("zip", { zlib: { level: 9 } });
-    res.attachment(`${project.title || "project"}.zip`);
+
+    // Handle errors explicitly to prevent server crashes
+    archive.on('error', function(err) {
+      throw err;
+    });
+
+    // Set headers
+    const filename = `${project.title || "project"}.zip`;
+    res.attachment(filename);
     archive.pipe(res);
 
+    // Recursive function with Safety Checks 🛡️
     const addFiles = (nodes, parentPath) => {
+      if (!Array.isArray(nodes)) return; // Stop if nodes is not an array
+
       nodes.forEach((node) => {
         const currentPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+        
         if (node.type === "file") {
-          const content = project.files[`/${currentPath}`]?.value || "";
-          archive.append(content, { name: currentPath });
+          // Files are stored with leading slash: "/root/src/App.jsx"
+          // We assume "root" is the top folder in your structure.
+          // If your DB keys look like "/src/App.jsx", adjust the lookup below.
+          
+          // Try both with and without leading slash to be safe
+          const fileKey = `/${currentPath}`; 
+          const fileData = project.files[fileKey] || project.files[currentPath];
+          
+          if (fileData) {
+             archive.append(fileData.value || "", { name: currentPath });
+          } else {
+             // Optional: Create empty file if content missing
+             archive.append("", { name: currentPath });
+          }
+
         } else if (node.type === "folder") {
-          addFiles(node.children, currentPath);
+          // Create the folder in the zip
+          archive.append(null, { name: currentPath + "/" });
+          
+          // CRASH FIX: Ensure children exists before recursing
+          addFiles(node.children || [], currentPath);
         }
       });
     };
 
+    // Start from the root children
     if (project.structure && project.structure.children) {
       addFiles(project.structure.children, "");
     }
 
-    archive.finalize();
+    await archive.finalize();
+
   } catch (err) {
-    res.status(500).send("Failed to zip project");
+    console.error("❌ ZIP Generation Error:", err); // Check your terminal for this!
+    if (!res.headersSent) {
+      res.status(500).send("Failed to zip project");
+    }
   }
 });
 
