@@ -8,6 +8,7 @@ function EditorWorkspace({
   provider,
   yDoc,
   setFileContent,
+  cursorRef // 👈 Receive Prop
 }) {
   return (
     <div className="flex-grow bg-[#1a1a1d] rounded-lg overflow-hidden shadow-inner">
@@ -34,6 +35,7 @@ function EditorWorkspace({
                 }))
               }
               language={fileLanguage[activeFile] || "plaintext"}
+              cursorRef={cursorRef} // 👈 Pass it down
             />
           </motion.div>
         ) : (

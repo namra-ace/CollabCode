@@ -17,7 +17,8 @@ function CodeEditor({
   language, 
   yProvider, 
   yDoc, 
-  theme = "vs-dark" 
+  theme = "vs-dark",
+  cursorRef // 👈 New Prop
 }) {
   const [editorRef, setEditorRef] = useState(null);
   const bindingRef = useRef(null);
@@ -31,7 +32,7 @@ function CodeEditor({
 
     const yText = yDoc.getText(activeFile);
 
-    // 1. Pre-fill view to avoid empty editor flash
+    // 1. Pre-fill view
     editorRef.setValue(yText.toString());
 
     // 2. Bind Yjs to Monaco
@@ -45,7 +46,19 @@ function CodeEditor({
     );
     bindingRef.current = binding;
 
-    // 3. Seed content from DB if room is empty
+    // ---------------------------------------------------------
+    // 3. TRACK CURSOR POSITION (For AI Insert)
+    // ---------------------------------------------------------
+    const cursorListener = editorRef.onDidChangeCursorPosition((e) => {
+      if (cursorRef) {
+        // Convert visual position (Line 5, Col 3) to Absolute Index (254)
+        const model = editorRef.getModel();
+        const offset = model.getOffsetAt(e.position);
+        cursorRef.current = offset;
+      }
+    });
+
+    // 4. Seed content from DB if room is empty
     const handleSync = () => {
       if (yText.toString() === "") {
         if (initialContent) {
@@ -63,8 +76,9 @@ function CodeEditor({
     return () => {
       binding.destroy();
       bindingRef.current = null;
+      cursorListener.dispose(); // Clean up listener
     };
-  }, [editorRef, yProvider, yDoc, activeFile]);
+  }, [editorRef, yProvider, yDoc, activeFile, cursorRef]); // Added cursorRef dependency
 
   const handleEditorChange = (value) => {
     if (onCodeChange) {

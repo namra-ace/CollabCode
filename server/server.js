@@ -3,15 +3,14 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
-const archiver = require("archiver");
 const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
-
 const { WebSocketServer } = require("ws");
 const { setupWSConnection } = require("./yjsUtils");
 
 const codeSocket = require("./sockets/codeSocket");
 const authRoutes = require("./routes/authRoutes");
+const aiRoutes = require("./routes/aiRoutes"); 
 const optionallyVerifyToken = require("./middleware/optionallyVerifyToken");
 const authenticateJWT = require("./middleware/authenticateJWT");
 
@@ -46,56 +45,41 @@ const wss = new WebSocketServer({ noServer: true });
 server.on("upgrade", async (request, socket, head) => {
   if (request.url.startsWith("/yjs")) {
     const url = new URL(request.url, `http://${request.headers.host}`);
-    
     const token = url.searchParams.get("token");
     const roomId = url.searchParams.get("roomId"); 
 
     let user = null;
     let hasWriteAccess = false;
 
-    // 1. Verify Token
     if (token) {
       try {
         const cleanToken = token.replace("Bearer ", "").replace(/['"]+/g, '').trim();
         const decoded = jwt.verify(cleanToken, process.env.JWT_SECRET);
         user = decoded;
-      } catch (err) {
-        // Token invalid or expired, user remains null
-      }
+      } catch (err) {}
     }
 
-    // 2. Check Permissions
     if (roomId && user) {
       try {
         const project = await Project.findOne({ roomId });
-        
         if (project) {
             const userId = user.id;
             const ownerId = project.createdBy ? project.createdBy.toString() : "null";
             const editors = project.editors.map(id => id.toString());
-
             const isOwner = ownerId === userId;
             const isEditor = editors.includes(userId);
 
             if (isOwner || isEditor) {
                 hasWriteAccess = true;
-                
-                // SELF HEALING: Ensure Owner is in editors list
                 if (isOwner && !isEditor) {
-                    await Project.updateOne(
-                        { _id: project._id }, 
-                        { $addToSet: { editors: userId } }
-                    );
+                    await Project.updateOne({ _id: project._id }, { $addToSet: { editors: userId } });
                 }
             }
         }
-      } catch (err) {
-        console.error("RBAC Error during upgrade:", err);
-      }
+      } catch (err) { console.error("RBAC Error:", err); }
     }
 
     request.readOnly = !hasWriteAccess;
-
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit("connection", ws, request);
     });
@@ -104,10 +88,7 @@ server.on("upgrade", async (request, socket, head) => {
 
 wss.on("connection", (ws, req) => {
   const docName = req.url.substring(1).split("?")[0];
-  setupWSConnection(ws, req, { 
-    docName, 
-    readOnly: req.readOnly 
-  });
+  setupWSConnection(ws, req, { docName, readOnly: req.readOnly });
 });
 
 // -------------------- MongoDB --------------------
@@ -117,14 +98,67 @@ mongoose.connect(process.env.MONGO_URI)
 
 // -------------------- Routes --------------------
 app.use("/api/auth", authRoutes);
+app.use("/api/ai", aiRoutes); 
 
+// ... existing imports
+
+// 1. Create Room (Clean Version)
+app.post("/api/create-room", authenticateJWT, async (req, res) => {
+  try {
+    const { roomId, title } = req.body;
+    if (!roomId) return res.status(400).json({ error: "Room ID is required" });
+
+    const exists = await Project.findOne({ roomId });
+    if (exists) return res.status(400).json({ error: "Room already exists" });
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: "User not found. Relogin required." });
+
+    const passcode = Math.floor(1000 + Math.random() * 9000).toString();
+
+    // 🔴 CHANGE IS HERE
+    const newProject = new Project({
+      roomId,
+      title: title || "Untitled",
+      
+      // 1. Empty Files Object (No README)
+      files: {}, 
+      
+      // 2. Empty Root Folder (Valid Structure)
+      structure: { 
+          type: "folder", 
+          name: "root", 
+          children: [] // No children initially
+      },
+      
+      createdBy: req.user.id,
+      passcode: passcode,
+      editors: [req.user.id],
+    });
+
+    await newProject.save();
+    
+    user.visitedRooms.addToSet(roomId);
+    await user.save();
+
+    res.status(201).json({ message: "Room created", passcode });
+  } catch (err) {
+    console.error("Create Room Error:", err);
+    res.status(500).json({ error: "Failed to create room" });
+  }
+});
+
+
+// 2. Verify Passcode
 app.post("/api/verify-passcode", authenticateJWT, async (req, res) => {
   const { roomId, passcode } = req.body;
   try {
     const project = await Project.findOne({ roomId });
     if (!project) return res.status(404).json({ error: "Room not found" });
 
-    // Always add Owner to editors if they verify
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
     if (project.createdBy.toString() === req.user.id) {
        await Project.updateOne({ roomId }, { $addToSet: { editors: req.user.id } });
        return res.json({ message: "Access granted", role: "owner" });
@@ -132,7 +166,8 @@ app.post("/api/verify-passcode", authenticateJWT, async (req, res) => {
 
     if (project.passcode === passcode) {
       await Project.updateOne({ roomId }, { $addToSet: { editors: req.user.id } });
-      await User.findByIdAndUpdate(req.user.id, { $addToSet: { visitedRooms: roomId } });
+      user.visitedRooms.addToSet(roomId);
+      await user.save();
       return res.json({ message: "Access granted", role: "editor" });
     } else {
       return res.status(403).json({ error: "Incorrect passcode" });
@@ -142,34 +177,7 @@ app.post("/api/verify-passcode", authenticateJWT, async (req, res) => {
   }
 });
 
-app.post("/api/create-room", authenticateJWT, async (req, res) => {
-  try {
-    const { roomId, title } = req.body;
-    const exists = await Project.findOne({ roomId });
-    if (exists) return res.status(400).json({ error: "Room already exists" });
-
-    const passcode = Math.floor(1000 + Math.random() * 9000).toString();
-
-    const newProject = new Project({
-      roomId,
-      title: title || "",
-      createdAt: new Date(),
-      files: {},
-      structure: { type: "folder", name: "root", children: [] },
-      createdBy: req.user.id,
-      passcode: passcode,
-      editors: [req.user.id],
-    });
-
-    await newProject.save();
-    await User.findByIdAndUpdate(req.user.id, { $addToSet: { visitedRooms: roomId } });
-
-    res.status(201).json({ message: "Room created", passcode });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to create room" });
-  }
-});
-
+// 3. Save Project
 app.post("/api/save", optionallyVerifyToken, async (req, res) => {
   const { roomId, files, structure, title } = req.body;
   try {
@@ -179,7 +187,7 @@ app.post("/api/save", optionallyVerifyToken, async (req, res) => {
       { upsert: true, new: true }
     );
     if (req.user) {
-      await User.findByIdAndUpdate(req.user.id, { $addToSet: { visitedRooms: roomId } });
+       await User.findByIdAndUpdate(req.user.id, { $addToSet: { visitedRooms: roomId } });
     }
     res.json({ message: "Project saved" });
   } catch (err) {
@@ -187,23 +195,15 @@ app.post("/api/save", optionallyVerifyToken, async (req, res) => {
   }
 });
 
-app.delete("/api/my-rooms/:roomId", authenticateJWT, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-    user.visitedRooms = user.visitedRooms.filter(id => id !== req.params.roomId);
-    await user.save();
-    res.json({ message: "Room removed" });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to remove room" });
-  }
-});
-
+// 4. Get Room (This was missing!)
 app.get("/api/room/:roomId", optionallyVerifyToken, async (req, res) => {
   try {
     const project = await Project.findOne({ roomId: req.params.roomId });
     if (!project) return res.status(404).json({ error: "Room not found" });
 
-    if (req.user) await User.findByIdAndUpdate(req.user.id, { $addToSet: { visitedRooms: req.params.roomId } });
+    if (req.user) {
+        await User.findByIdAndUpdate(req.user.id, { $addToSet: { visitedRooms: req.params.roomId } });
+    }
 
     const projectData = project.toObject();
     const userId = req.user ? req.user.id : null;
@@ -220,18 +220,63 @@ app.get("/api/room/:roomId", optionallyVerifyToken, async (req, res) => {
   }
 });
 
-app.get("/api/download/:roomId", async (req, res) => {
-  // Logic remains same as previous implementation
-});
-
-app.get("/api/my-rooms", optionallyVerifyToken, async (req, res) => {
-  if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+// 5. Get My Rooms (Robust)
+app.get("/api/my-rooms", authenticateJWT, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    const rooms = await Project.find({ roomId: { $in: user.visitedRooms } }, "roomId createdAt title");
+    if (!user) return res.status(404).json({ error: "User not found. Relogin required." });
+
+    const rooms = await Project.find(
+        { roomId: { $in: user.visitedRooms } }, 
+        "roomId createdAt title"
+    );
     res.json(rooms);
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch rooms" });
+  }
+});
+
+// 6. Delete Room
+app.delete("/api/my-rooms/:roomId", authenticateJWT, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    user.visitedRooms = user.visitedRooms.filter(id => id !== req.params.roomId);
+    await user.save();
+    res.json({ message: "Room removed" });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to remove room" });
+  }
+});
+
+// 7. Download Project
+app.get("/api/download/:roomId", async (req, res) => {
+  try {
+    const project = await Project.findOne({ roomId: req.params.roomId });
+    if (!project) return res.status(404).send("Room not found");
+
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    res.attachment(`${project.title || "project"}.zip`);
+    archive.pipe(res);
+
+    const addFiles = (nodes, parentPath) => {
+      nodes.forEach((node) => {
+        const currentPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+        if (node.type === "file") {
+          const content = project.files[`/${currentPath}`]?.value || "";
+          archive.append(content, { name: currentPath });
+        } else if (node.type === "folder") {
+          addFiles(node.children, currentPath);
+        }
+      });
+    };
+
+    if (project.structure && project.structure.children) {
+      addFiles(project.structure.children, "");
+    }
+
+    archive.finalize();
+  } catch (err) {
+    res.status(500).send("Failed to zip project");
   }
 });
 

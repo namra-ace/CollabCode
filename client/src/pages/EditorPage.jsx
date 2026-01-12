@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import toast from "react-hot-toast"; // ✅ Import toast hook only
+import toast from "react-hot-toast";
 
 import Spinner from "../components/common/Spinner";
 import ProjectSidebar from "../components/sidebar/ProjectSidebar";
@@ -35,6 +35,9 @@ function EditorPage() {
   const navigate = useNavigate();
   const location = useLocation();
   
+  // 📍 Tracks cursor position (0 to N)
+  const cursorRef = useRef(0);
+
   const [isVerifying, setIsVerifying] = useState(false);
   const [canConnect, setCanConnect] = useState(false);
 
@@ -67,7 +70,6 @@ function EditorPage() {
           toast.success("Access Granted");
         } else {
           toast.error(data.error || "Access Denied");
-          // Slight delay before kicking them out so they can read the toast
           setTimeout(() => navigate("/"), 2000);
         }
       } catch (err) {
@@ -127,6 +129,45 @@ function EditorPage() {
     token,
   });
 
+  // ---------------------------------------------------------------
+  // 🤖 AI INSERTION LOGIC (CLEAN CODE ONLY)
+  // ---------------------------------------------------------------
+  const handleApplyAiSuggestion = (suggestion) => {
+    if (!yDoc || !activeFile) return toast.error("No active file!");
+
+    const yText = yDoc.getText(activeFile);
+    
+    // 1. EXTRACT CODE ONLY (Regex)
+    // This looks for content between ``` and ```
+    // ([\s\S]*?) matches any character including newlines
+    const codeBlockRegex = /```(?:[\w]*\n)?([\s\S]*?)```/;
+    const match = suggestion.match(codeBlockRegex);
+
+    let codeToInsert = suggestion;
+
+    if (match && match[1]) {
+      // ✅ Found a code block! Use ONLY the code inside.
+      codeToInsert = match[1].trim(); 
+    } else {
+      // ⚠️ No code block found. 
+      // Fallback: Use the whole text, but try to strip common prefixes if needed.
+      // Usually, Gemini/OpenAI ALWAYS uses code blocks for code.
+      codeToInsert = suggestion;
+    }
+
+    // 2. Insert as REAL CODE (No Comments) at Cursor
+    const insertPos = cursorRef.current || 0;
+
+    // Atomic Transaction (Visible to ALL users instantly)
+    yDoc.transact(() => {
+      // Ensure we don't insert out of bounds
+      const safePos = Math.min(insertPos, yText.length);
+      yText.insert(safePos, "\n" + codeToInsert + "\n");
+    });
+
+    toast.success("Code inserted at cursor!");
+  };
+
   if (authLoading || isVerifying || !hasLoadedFiles) {
     return (
       <div className="h-screen w-screen flex flex-col gap-4 items-center justify-center bg-gray-950 text-white">
@@ -139,8 +180,6 @@ function EditorPage() {
 
   return (
     <div className="h-screen w-screen flex bg-[#0a0a0a] text-white overflow-hidden">
-      {/* ❌ No <Toaster /> here, it is in main.jsx */}
-
       <motion.div
         initial={{ x: -50, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
@@ -210,6 +249,7 @@ function EditorPage() {
       </motion.div>
 
       <div className="flex-grow flex flex-col p-4">
+        {/* Pass props including the new handler */}
         <EditorHeader
           title={title}
           setTitle={setTitle}
@@ -217,6 +257,9 @@ function EditorPage() {
           roomId={roomId}
           navigate={navigate}
           backendUrl={BACKEND_URL}
+          activeFile={activeFile}
+          codeContent={fileContent[activeFile] || ""}
+          onApplySuggestion={handleApplyAiSuggestion}
         />
 
         <EditorTabs
@@ -234,6 +277,7 @@ function EditorPage() {
             provider={provider}
             yDoc={yDoc}
             setFileContent={setFileContent}
+            cursorRef={cursorRef} // 👈 CRITICAL: Pass Ref Down
           />
         )}
 
